@@ -54,7 +54,19 @@ def test_kaputtes_toml_nennt_datei_und_haeufigste_ursache(tmp_path):
     with pytest.raises(config.KonfigFehler) as fehler:
         config.lade(pfad)
     assert "wissen.toml" in str(fehler.value)
-    assert "Schrägstriche" in str(fehler.value)
+    assert "Anführungszeichen" in str(fehler.value)
+
+
+def test_windows_pfad_in_einfachen_anfuehrungszeichen(tmp_path):
+    # TOML-Literale: einfache Anführungszeichen interpretieren nichts, der
+    # Pfad kann also unverändert aus dem Explorer kommen.
+    pfad = _schreibe(tmp_path, "[ablage]\npfad = 'C:\\Users\\Rene\\buch'\n")
+    assert "Users" in str(config.lade(pfad).ablage)
+
+
+def test_windows_pfad_mit_doppelten_backslashes(tmp_path):
+    pfad = _schreibe(tmp_path, '[ablage]\npfad = "C:\\\\Users\\\\Rene\\\\buch"\n')
+    assert "Users" in str(config.lade(pfad).ablage)
 
 
 def test_nicht_utf8_meldet_kodierung(tmp_path):

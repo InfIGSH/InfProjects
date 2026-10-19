@@ -89,13 +89,17 @@ pfad = "~/Ultimate Production Helper/buch"
 Das ist die einzige Pflichtangabe. Alles andere in der Datei hat brauchbare
 Vorgaben.
 
-Unter Windows mit Schrägstrichen oder doppelten Backslashes schreiben — ein
-einfacher Backslash gilt in TOML als Escape-Zeichen und macht die Datei
-unlesbar:
+Unter Windows den Pfad in **einfache** Anführungszeichen setzen. Die sind in
+TOML wortwörtlich, der Pfad kann also unverändert aus dem Explorer kommen:
 
 ```toml
-pfad = "C:/Users/Rene/Ultimate Production Helper/buch"
+pfad = 'C:\Users\Rene\Ultimate Production Helper\buch'
 ```
+
+Mit doppelten Anführungszeichen ist `\` ein Escape-Zeichen (`\n`, `\t`, `\U`)
+— `"C:\Users\..."` scheitert deshalb mit `Invalid hex value`. Dort gehen nur
+Schrägstriche (`"C:/Users/..."`) oder doppelte Backslashes
+(`"C:\\Users\\..."`).
 
 ## 3. Loslegen
 

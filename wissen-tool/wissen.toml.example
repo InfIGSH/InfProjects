@@ -5,6 +5,12 @@
 # Der vorhandene buch/-Ordner des Projekts "Ultimate Production Helper".
 # Das Werkzeug schreibt ausschließlich in buch/eingang/ -- Kursdateien,
 # Teil I-V, quellen.md und konzeptregister.md werden nie angefasst.
+#
+# Windows: einfache Anführungszeichen nehmen, die sind wortwörtlich --
+# dann kann der Pfad unverändert aus dem Explorer kommen:
+#   pfad = 'C:\Users\Name\Ultimate Production Helper\buch'
+# In doppelten Anführungszeichen ist \ ein Escape-Zeichen; dort gehen nur
+# Schrägstriche oder doppelte Backslashes.
 pfad = "~/Ultimate Production Helper/buch"
 
 [browser]

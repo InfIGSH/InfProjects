@@ -87,8 +87,10 @@ def lade(explizit: str | os.PathLike | None = None) -> Konfig:
     except tomllib.TOMLDecodeError as exc:
         raise KonfigFehler(
             f"{pfad} ist keine gültige TOML-Datei: {exc}\n"
-            "Häufigste Ursache unter Windows: einfache Backslashes im Pfad. "
-            'Schrägstriche nehmen, z.B. pfad = "C:/Users/Name/Ordner".'
+            "Häufigste Ursache unter Windows: Backslashes in einem Pfad mit "
+            'doppelten Anführungszeichen -- dort ist \\ ein Escape-Zeichen. '
+            "Einfache Anführungszeichen nehmen, die sind wortwörtlich:\n"
+            "    pfad = 'C:\\Users\\Name\\Ordner'"
         ) from exc
 
     ablage_roh = (daten.get("ablage") or {}).get("pfad")
