@@ -29,6 +29,70 @@ LINK_JS = """
 """
 
 
+def thinkspace_links(html: str, url: str) -> list[dict]:
+    """Liest Thinkspaces Navigationsattribute, ohne Elemente anzuklicken.
+
+    Auch eingeklappte Eintraege werden erfasst. Ordner (b) sind keine
+    Lektionen. Die Route fuer cd/ic/qz entspricht dem Seiten-JavaScript.
+    """
+    from html.parser import HTMLParser
+    from urllib.parse import urlsplit
+
+    adresse = urlsplit(url)
+    kurs = re.fullmatch(r"/student/course/view/([0-9]+)(?:/item/[0-9]+(?:/[0-9]+)+)?/?", adresse.path)
+    if adresse.hostname != "campus.thinkspace.ac.uk" or not kurs:
+        return []
+    basis = f"{adresse.scheme}://{adresse.netloc}/student/course/view/{kurs[1]}/item/"
+
+    leere_tags = {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+
+    class Navigation(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.tiefe = 0
+            self.aktuell = None
+            self.texte = []
+            self.links = []
+
+        def handle_starttag(self, tag, attrs):
+            attribute = dict(attrs)
+            if self.aktuell is not None:
+                if tag not in leere_tags:
+                    self.tiefe += 1
+                return
+            if "goViewItem" not in attribute.get("class", "").split():
+                return
+            item = attribute.get("courseitemid", "")
+            dokument = attribute.get("coursereaderid", "")
+            if (attribute.get("vtype") not in {"cd", "ic", "qz"}
+                    or not re.fullmatch(r"[0-9]+", item)
+                    or not re.fullmatch(r"[0-9]+", dokument)
+                    or int(item) == 0 or int(dokument) == 0):
+                return
+            self.aktuell = basis + f"{item}/0/{dokument}"
+            self.texte = []
+            self.tiefe = 1
+
+        def handle_data(self, data):
+            if self.aktuell is not None:
+                self.texte.append(data)
+
+        def handle_endtag(self, tag):
+            if tag in leere_tags or self.aktuell is None:
+                return
+            self.tiefe -= 1
+            if self.tiefe == 0:
+                self.links.append({"href": self.aktuell, "text": " ".join(" ".join(self.texte).split())})
+                self.aktuell = None
+
+    parser = Navigation()
+    parser.feed(html)
+    return parser.links
+
+
 #: Woran eine mitgeschnittene Antwort nach Kursstruktur aussieht.
 STRUKTUR_WORTE = ["item", "lesson", "module", "chapter", "lecture", "topic", "unit"]
 
@@ -106,12 +170,13 @@ def sammle_links(
 ) -> tuple[Path, Path | None, list[tuple[str, int]]]:
     """Sammelt die Links einer Seite und schneidet ihre Datenabrufe mit.
 
-    Gedacht zum Aufbauen der URL-Liste fuer `wissen kurs --liste`. Zwei Wege,
+    Gedacht zum Aufbauen der URL-Liste fuer `wissen kurs --liste`. Drei Wege,
     weil der erste bei JavaScript-Anwendungen nicht reicht:
 
     1. `<a href>` im DOM, nach Pfadform gruppiert -- klappt bei Seiten, die
        ihre Unterseiten wirklich verlinken.
-    2. Mitschnitt der Datenantworten. Eine Anwendung, die ihre Navigation per
+    2. Thinkspace-Navigationsattribute direkt aus dem HTML lesen.
+    3. Mitschnitt der Datenantworten. Eine Anwendung, die ihre Navigation per
        JavaScript baut, hat keine Links -- aber sie laedt ihre Struktur als
        JSON, und darin stehen die Kennungen, aus denen sich die Lektions-URLs
        zusammensetzen.
@@ -124,6 +189,7 @@ def sammle_links(
     marke_vorab = schema.dateiname_fuer_url(url)
 
     gefunden: "OrderedDict[str, list[tuple[str, str]]]" = OrderedDict()
+    lektionsformen: set[str] = set()
     antworten: list = []
     with web.browser(cfg, headless=headless) as kontext:
         seite = kontext.new_page()
@@ -149,7 +215,9 @@ def sammle_links(
             gesehen: set[str] = set()
             for frame in web.rahmen_von(seite):
                 with contextlib.suppress(Exception):
-                    for eintrag in frame.evaluate(LINK_JS) or []:
+                    navigation = thinkspace_links(frame.content(), url)
+                    lektionsformen.update(_muster(e["href"]) for e in navigation)
+                    for eintrag in navigation + (frame.evaluate(LINK_JS) or []):
                         href = (eintrag.get("href") or "").split("#")[0]
                         if not href.startswith("http") or href in gesehen:
                             continue
@@ -172,14 +240,14 @@ def sammle_links(
         finally:
             seite.close()
 
-    gruppen = sorted(gefunden.items(), key=lambda p: -len(p[1]))
+    gruppen = sorted(gefunden.items(), key=lambda p: (p[0] not in lektionsformen, -len(p[1])))
     marke = schema.dateiname_fuer_url(url)
 
     zeilen = [
         f"# Linkbericht: {url}", "",
         f"- Erfassungsdatum: {schema.heute()}",
         f"- {sum(len(v) for v in gefunden.values())} Links auf {eigener_host}",
-        "", "Nach Pfadform gruppiert, groesste Gruppe zuerst. Die Lektionen eines",
+        "", "Nach Pfadform gruppiert, Lektionsnavigation zuerst, sonst groesste Gruppe. Die Lektionen eines",
         "Kurses teilen in der Regel eine Form.", "",
     ]
     for form, eintraege in gruppen[:12]:
@@ -227,9 +295,9 @@ def sammle_links(
     bericht = ausgabe / f"{marke}.links.md"
     bericht.write_text("\n".join(zeilen).rstrip() + "\n", encoding="utf-8")
 
-    # Die groesste Gruppe gleich als fertige Liste ablegen.
+    # Erkannte Lektionen bevorzugen; sonst die groesste Gruppe ablegen.
     liste = None
-    if gruppen and len(gruppen[0][1]) > 1:
+    if gruppen and (gruppen[0][0] in lektionsformen or len(gruppen[0][1]) > 1):
         liste = ausgabe / f"{marke}.liste.txt"
         inhalt = [
             f"# Aus {url} gesammelt, Pfadform {gruppen[0][0]}",

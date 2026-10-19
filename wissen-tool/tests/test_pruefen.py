@@ -144,3 +144,79 @@ def test_frame_name_kuerzt_lange_urls():
 def test_frame_name_ohne_url():
     name = pruefen._frame_name(type("F", (), {"url": ""})(), 1)
     assert "ohne URL" in name
+
+
+# Thinkspace rendert Lektionsziele als div statt als a[href].
+KURS_URL = "https://campus.thinkspace.ac.uk/student/course/view/329"
+
+
+@pytest.mark.parametrize("typ", ["cd", "ic", "qz"])
+@pytest.mark.parametrize("umbruch", ["<br>", "<br/>"])
+def test_thinkspace_navigation_ohne_klick_auch_versteckt(typ, umbruch):
+    html = (f'<div style="display:none"><div class="btn goViewItem" '
+            f'courseitemid="43336" vtype="{typ}" coursereaderid="709">'
+            f'<i class="icon"></i>Welcome &amp; overview{umbruch}Introduction</div></div>')
+    assert pruefen.thinkspace_links(html, KURS_URL) == [{
+        "href": KURS_URL + "/item/43336/0/709",
+        "text": "Welcome & overview Introduction",
+    }]
+
+
+@pytest.mark.parametrize("typ,item,dokument", [
+    ("b", "43333", "0"), ("unknown", "1", "2"),
+    ("cd", "x", "709"), ("cd", "43336", ""),
+    ("cd", "43336", "0"), ("cd", "0", "709"),
+])
+def test_thinkspace_ignoriert_ordner_und_ungueltige_ziele(typ, item, dokument):
+    html = (f'<div class="goViewItem" vtype="{typ}" '
+            f'courseitemid="{item}" coursereaderid="{dokument}">Titel</div>')
+    assert pruefen.thinkspace_links(html, KURS_URL) == []
+
+
+@pytest.mark.parametrize("url", [
+    "https://example.org/student/course/view/329",
+    "https://campus.thinkspace.ac.uk/student/dashboard",
+])
+def test_thinkspace_parser_ist_auf_kursseiten_begrenzt(url):
+    html = '<div class="goViewItem" vtype="cd" courseitemid="1" coursereaderid="2">L</div>'
+    assert pruefen.thinkspace_links(html, url) == []
+
+
+def test_thinkspace_lektion_als_startseite_und_dom_reihenfolge():
+    html = ''.join(
+        f'<div class="goViewItem" vtype="cd" courseitemid="{i}" '
+        f'coursereaderid="{d}">Lektion {i}</div>'
+        for i, d in [(43336, 709), (54102, 1594)]
+    )
+    links = pruefen.thinkspace_links(html, KURS_URL + "/item/43336/0/709")
+    assert [e["href"] for e in links] == [
+        KURS_URL + "/item/43336/0/709", KURS_URL + "/item/54102/0/1594",
+    ]
+
+
+def test_sammle_links_bevorzugt_lektion_vor_groesserem_menue(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    html = ('<div class="goViewItem" vtype="cd" courseitemid="43336" '
+            'coursereaderid="709">Introduction</div>')
+    lektion = KURS_URL + '/item/43336/0/709'
+    menue = [{"href": f"https://campus.thinkspace.ac.uk/menu/{n}", "text": "Menü"}
+             for n in range(10)]
+    # Ein echter Link auf dasselbe Ziel darf keine Dublette erzeugen.
+    frame = SimpleNamespace(content=lambda: html,
+                            evaluate=lambda js: menue + [{"href": lektion, "text": "Intro"}])
+    seite = SimpleNamespace(
+        on=lambda *a: None, goto=lambda *a, **k: None,
+        wait_for_load_state=lambda *a, **k: None,
+        wait_for_timeout=lambda *a: None, frames=[frame], close=lambda: None,
+    )
+    monkeypatch.setattr(pruefen.web, 'browser',
+                        lambda *a, **k: nullcontext(SimpleNamespace(new_page=lambda: seite)))
+    bericht, liste, gruppen = pruefen.sammle_links(
+        SimpleNamespace(warte_ms=0), KURS_URL, tmp_path,
+    )
+    assert gruppen[0] == ('/student/course/view/#/item/#/#/#', 1)
+    assert liste is not None
+    assert pruefen.web.lies_liste(liste) == [(lektion, 'Introduction')]
+    assert bericht.exists()

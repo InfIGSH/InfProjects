@@ -196,6 +196,14 @@ Gruppe als fertige Liste ab. Die Lektionen eines Kurses teilen eine Form,
 Navigation und Fußzeile nicht – damit trennt sich das Gesuchte vom Rest, ohne
 dass die Plattform bekannt sein muss.
 
+Bei Thinkspace werden außerdem die `goViewItem`-Navigationselemente direkt
+anhand von `courseitemid`, `vtype` und `coursereaderid` ausgelesen. Dafür sind
+keine Klicks nötig; auch versteckte Einträge im DOM werden berücksichtigt.
+Dokumente und die bekannten Inhaltstypen `cd`, `ic`, `qz` werden als
+Lektions-URLs gesammelt, Ordner ausgeschlossen. Diese Lektionsgruppe hat
+Vorrang vor allgemeinen Menülinks. Noch nicht ins DOM geladene Einträge
+können damit nicht erfasst werden.
+
 Der Bericht daneben zeigt alle Gruppen, falls die größte nicht die richtige
 war.
 
