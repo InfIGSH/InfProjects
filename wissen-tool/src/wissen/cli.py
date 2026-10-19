@@ -131,7 +131,7 @@ def befehl_links(args) -> int:
         Path(args.ausgabe).expanduser() if args.ausgabe else Path.cwd() / "berichte"
     ).resolve()
     bericht, liste, gruppen = pruefen.sammle_links(
-        cfg, args.url, ausgabe, headless=args.headless
+        cfg, args.url, ausgabe, headless=args.headless, klicks=args.klick
     )
     print(f"\nOrdner:  {ausgabe}")
     print(f"Bericht: {bericht.name}")
@@ -140,8 +140,10 @@ def befehl_links(args) -> int:
         print("\nListe durchsehen, dann:")
         print(f"  wissen kurs --liste \"{liste}\" --praefix <kurs>")
     else:
-        print("Keine Gruppe mit mehreren gleichartigen Links gefunden.")
-        print("Der Bericht zeigt, was auf der Seite verlinkt ist.")
+        print("Keine Gruppe mit mehreren gleichartigen Links gefunden —")
+        print("die Seite baut ihre Navigation vermutlich per JavaScript.")
+        print("Der Bericht listet dann die mitgeschnittenen Datenabrufe;")
+        print("darin steckt die Kursstruktur.")
     return 0
 
 
@@ -320,7 +322,9 @@ def baue_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=befehl_kurs)
 
     s = unter.add_parser("links", help="Lektions-URLs einer Kursseite sammeln")
-    s.add_argument("url", help="Kursübersicht, von der aus die Lektionen verlinkt sind")
+    s.add_argument("url", help="Kursübersicht, von der aus die Lektionen erreichbar sind")
+    s.add_argument("--klick", action="append", default=[],
+                   help="Selektor, der einen Abschnitt aufklappt (mehrfach möglich)")
     s.add_argument("--ausgabe", help="Ordner für Bericht und Liste (Standard: ./berichte)")
     s.add_argument("--headless", action="store_true")
     s.set_defaults(func=befehl_links)

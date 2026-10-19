@@ -14,6 +14,7 @@ Sperrliste aus `web.py`.
 from __future__ import annotations
 
 import contextlib
+import re
 from pathlib import Path
 
 from . import erkennung, schema, web
@@ -26,6 +27,57 @@ LINK_JS = """
   text: (a.innerText || a.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120),
 }))
 """
+
+
+#: Woran eine mitgeschnittene Antwort nach Kursstruktur aussieht.
+STRUKTUR_WORTE = ["item", "lesson", "module", "chapter", "lecture", "topic", "unit"]
+
+
+def _schneide_antworten(
+    antworten: list, ausgabe: Path, marke: str, eigener_host: str
+) -> list[dict]:
+    """Legt die mitgeschnittenen Datenantworten ab und beurteilt sie grob."""
+    ergebnis: list[dict] = []
+    for nr, antwort in enumerate(antworten):
+        eintrag = {
+            "url": getattr(antwort, "url", "?"),
+            "status": getattr(antwort, "status", "?"),
+            "typ": "?",
+            "laenge": 0,
+            "datei": None,
+            "struktur": False,
+            "fehler": None,
+        }
+        with contextlib.suppress(Exception):
+            eintrag["typ"] = (antwort.headers or {}).get("content-type", "?")
+        if web._host(eintrag["url"]) != eigener_host:
+            continue
+        try:
+            text = antwort.text()
+        except Exception as exc:
+            eintrag["fehler"] = f"{type(exc).__name__}: {exc}"
+            ergebnis.append(eintrag)
+            continue
+
+        eintrag["laenge"] = len(text)
+        if len(text) > MAX_ANTWORT:
+            eintrag["fehler"] = "zu gross, nicht gespeichert"
+            ergebnis.append(eintrag)
+            continue
+
+        klein = text.lower()
+        # Kursstruktur erkennt man an Strukturwoertern zusammen mit Kennungen.
+        eintrag["struktur"] = (
+            sum(wort in klein for wort in STRUKTUR_WORTE) >= 2
+            and bool(re.search(r'"\w*id"\s*:\s*\d', klein))
+        )
+        endung = "json" if "json" in eintrag["typ"].lower() else "txt"
+        datei = ausgabe / f"{marke}.antwort{nr:02d}.{endung}"
+        with contextlib.suppress(Exception):
+            datei.write_text(text, encoding="utf-8")
+            eintrag["datei"] = datei
+        ergebnis.append(eintrag)
+    return ergebnis
 
 
 def _muster(url: str) -> str:
@@ -41,29 +93,58 @@ def _muster(url: str) -> str:
     return "/".join(teile)
 
 
-def sammle_links(
-    cfg: Konfig, url: str, ausgabe: Path, *, headless: bool = False
-) -> tuple[Path, Path | None, list[tuple[str, int]]]:
-    """Sammelt alle Links einer Seite und gruppiert sie nach Pfadform.
+#: Datentypen, in denen eine Kursstruktur stecken kann.
+DATEN_TYPEN = ("json", "javascript", "xml", "text/plain")
 
-    Gedacht zum Aufbauen der URL-Liste fuer `wissen kurs --liste`: die
-    Lektionen eines Kurses teilen eine Pfadform, und die groesste Gruppe mit
-    gleicher Form ist fast immer die Lektionsliste.
+#: Groessere Antworten werden nicht mitgeschnitten.
+MAX_ANTWORT = 4 * 1024 * 1024
+
+
+def sammle_links(
+    cfg: Konfig, url: str, ausgabe: Path, *, headless: bool = False,
+    klicks: list[str] | None = None,
+) -> tuple[Path, Path | None, list[tuple[str, int]]]:
+    """Sammelt die Links einer Seite und schneidet ihre Datenabrufe mit.
+
+    Gedacht zum Aufbauen der URL-Liste fuer `wissen kurs --liste`. Zwei Wege,
+    weil der erste bei JavaScript-Anwendungen nicht reicht:
+
+    1. `<a href>` im DOM, nach Pfadform gruppiert -- klappt bei Seiten, die
+       ihre Unterseiten wirklich verlinken.
+    2. Mitschnitt der Datenantworten. Eine Anwendung, die ihre Navigation per
+       JavaScript baut, hat keine Links -- aber sie laedt ihre Struktur als
+       JSON, und darin stehen die Kennungen, aus denen sich die Lektions-URLs
+       zusammensetzen.
     """
     from collections import OrderedDict
 
     ausgabe = Path(ausgabe).expanduser()
     ausgabe.mkdir(parents=True, exist_ok=True)
     eigener_host = web._host(url)
+    marke_vorab = schema.dateiname_fuer_url(url)
 
     gefunden: "OrderedDict[str, list[tuple[str, str]]]" = OrderedDict()
+    antworten: list = []
     with web.browser(cfg, headless=headless) as kontext:
         seite = kontext.new_page()
+
+        def merke(antwort):
+            with contextlib.suppress(Exception):
+                typ = (antwort.headers or {}).get("content-type", "")
+                if any(t in typ.lower() for t in DATEN_TYPEN):
+                    antworten.append(antwort)
+
+        seite.on("response", merke)
         try:
             seite.goto(url, wait_until="domcontentloaded", timeout=120_000)
             with contextlib.suppress(Exception):
                 seite.wait_for_load_state("networkidle", timeout=15_000)
             seite.wait_for_timeout(cfg.warte_ms)
+
+            if klicks:
+                web._oeffne_panel(seite, {"klicks": klicks}, cfg.warte_ms)
+                with contextlib.suppress(Exception):
+                    seite.wait_for_load_state("networkidle", timeout=15_000)
 
             gesehen: set[str] = set()
             for frame in web.rahmen_von(seite):
@@ -78,6 +159,16 @@ def sammle_links(
                         gefunden.setdefault(_muster(href), []).append(
                             (href, eintrag.get("text") or "")
                         )
+
+            # Das Seitengeruest mitnehmen: baut die Anwendung ihre Navigation
+            # ohne Links, stecken die Kennungen oft in Attributen.
+            for nr, frame in enumerate(web.rahmen_von(seite)):
+                with contextlib.suppress(Exception):
+                    (ausgabe / f"{marke_vorab}.frame{nr}.html").write_text(
+                        frame.content(), encoding="utf-8"
+                    )
+
+            daten = _schneide_antworten(antworten, ausgabe, marke_vorab, eigener_host)
         finally:
             seite.close()
 
@@ -98,6 +189,40 @@ def sammle_links(
         if len(eintraege) > 40:
             zeilen.append(f"- … und {len(eintraege) - 40} weitere")
         zeilen.append("")
+
+    # Mitgeschnittene Datenabrufe. Baut die Seite ihre Navigation per
+    # JavaScript, gibt es keine Links -- die Struktur steckt dann hier.
+    zeilen += ["## Datenabrufe der Seite", ""]
+    if not daten:
+        zeilen.append("- keine mitgeschnitten")
+    else:
+        verdaechtig = [d for d in daten if d["struktur"]]
+        zeilen.append(
+            f"{len(daten)} Antworten, davon {len(verdaechtig)} mit Strukturmerkmalen "
+            "(Strukturwoerter plus Kennungen)."
+        )
+        zeilen.append("")
+        for eintrag in sorted(daten, key=lambda d: (not d["struktur"], -d["laenge"])):
+            marker = "**" if eintrag["struktur"] else ""
+            zeilen.append(
+                f"- {marker}{eintrag['url']}{marker}"
+            )
+            zeilen.append(
+                f"  - Status {eintrag['status']}, {eintrag['laenge']} Zeichen, "
+                f"{eintrag['typ']}"
+            )
+            if eintrag["fehler"]:
+                zeilen.append(f"  - nicht gespeichert: {eintrag['fehler']}")
+            elif eintrag["datei"]:
+                zeilen.append(f"  - Datei: `{eintrag['datei']}`")
+        zeilen.append("")
+        if verdaechtig:
+            zeilen += [
+                "Die fett markierten Antworten enthalten wahrscheinlich die",
+                "Kursstruktur mit den Kennungen, aus denen sich die",
+                "Lektions-URLs zusammensetzen.",
+                "",
+            ]
 
     bericht = ausgabe / f"{marke}.links.md"
     bericht.write_text("\n".join(zeilen).rstrip() + "\n", encoding="utf-8")

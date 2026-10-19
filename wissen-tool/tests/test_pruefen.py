@@ -43,6 +43,96 @@ def test_muster_ohne_pfad():
     assert pruefen._muster("https://kurs.de") == "/"
 
 
+# -- Mitgeschnittene Datenabrufe -----------------------------------------
+
+
+class _Antwort:
+    """Nachbildung einer Playwright-Response."""
+
+    def __init__(self, url, inhalt, typ="application/json", status=200, platzt=False):
+        self.url = url
+        self.status = status
+        self.headers = {"content-type": typ}
+        self._inhalt = inhalt
+        self._platzt = platzt
+
+    def text(self):
+        if self._platzt:
+            raise RuntimeError("Inhalt nicht mehr verfügbar")
+        return self._inhalt
+
+
+KURSSTRUKTUR = (
+    '{"modules":[{"id":1,"title":"Module 1","items":['
+    '{"itemId":43336,"documentId":709,"title":"Welcome To The Course!"}]}]}'
+)
+
+
+def test_struktur_wird_an_woertern_und_kennungen_erkannt(tmp_path):
+    daten = pruefen._schneide_antworten(
+        [_Antwort("https://kurs.de/api/course/329", KURSSTRUKTUR)],
+        tmp_path, "marke", "kurs.de",
+    )
+    assert len(daten) == 1
+    assert daten[0]["struktur"] is True
+    assert daten[0]["datei"].suffix == ".json"
+    assert "Welcome To The Course!" in daten[0]["datei"].read_text(encoding="utf-8")
+
+
+def test_belanglose_antwort_gilt_nicht_als_struktur(tmp_path):
+    daten = pruefen._schneide_antworten(
+        [_Antwort("https://kurs.de/api/ping", '{"ok":true}')],
+        tmp_path, "marke", "kurs.de",
+    )
+    assert daten[0]["struktur"] is False
+
+
+def test_strukturwoerter_ohne_kennungen_reichen_nicht(tmp_path):
+    # Ein Übersetzungspaket nennt zwar "module" und "lesson", enthält aber
+    # keine Kennungen -- es ist nicht die Struktur.
+    daten = pruefen._schneide_antworten(
+        [_Antwort("https://kurs.de/i18n/de", '{"module":"Modul","lesson":"Lektion"}')],
+        tmp_path, "marke", "kurs.de",
+    )
+    assert daten[0]["struktur"] is False
+
+
+def test_fremde_hosts_werden_nicht_mitgeschnitten(tmp_path):
+    daten = pruefen._schneide_antworten(
+        [_Antwort("https://cdn.fremd.de/app.js", KURSSTRUKTUR)],
+        tmp_path, "marke", "kurs.de",
+    )
+    assert daten == []
+
+
+def test_unlesbare_antwort_wird_vermerkt_statt_verschluckt(tmp_path):
+    daten = pruefen._schneide_antworten(
+        [_Antwort("https://kurs.de/api/x", "", platzt=True)],
+        tmp_path, "marke", "kurs.de",
+    )
+    assert daten[0]["datei"] is None
+    assert "nicht mehr verfügbar" in daten[0]["fehler"]
+
+
+def test_zu_grosse_antwort_wird_nicht_gespeichert(tmp_path):
+    riesig = "x" * (pruefen.MAX_ANTWORT + 1)
+    daten = pruefen._schneide_antworten(
+        [_Antwort("https://kurs.de/api/gross", riesig)], tmp_path, "marke", "kurs.de",
+    )
+    assert daten[0]["datei"] is None
+    assert "zu gross" in daten[0]["fehler"]
+    assert not list(tmp_path.glob("*.json"))
+
+
+def test_nicht_json_bekommt_txt_endung(tmp_path):
+    daten = pruefen._schneide_antworten(
+        [_Antwort("https://kurs.de/app.js", "window.kurs=" + KURSSTRUKTUR,
+                  typ="application/javascript")],
+        tmp_path, "marke", "kurs.de",
+    )
+    assert daten[0]["datei"].suffix == ".txt"
+
+
 def test_frame_name_kuerzt_lange_urls():
     lang = "https://kurs.de/" + "a" * 200
     name = pruefen._frame_name(type("F", (), {"url": lang})(), 2)
