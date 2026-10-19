@@ -120,13 +120,16 @@ def entdoppeln(kacheln: list[Kachel]) -> list[Kachel]:
     return ergebnis
 
 
-def zu_text(kacheln: list[Kachel], marke_alle: int = 30) -> str:
+def zu_text(
+    kacheln: list[Kachel], marke_alle: int = 30, schon_entdoppelt: bool = False
+) -> str:
     """Baut Fliesstext mit Zeitmarken im Abstand von `marke_alle` Sekunden.
 
-    Die Marken sind der Ankerpunkt fuer alles Weitere: Claude zitiert daraus
-    und leitet daraus die Zeitpunkte fuer Screenshots ab.
+    Die Marken sind der Ankerpunkt fuer alles Weitere: Belege nach Regel 2 der
+    Genre-Rezepte (`[S2 04:12]`) und die Zeitpunkte fuer Screenshots.
     """
-    kacheln = entdoppeln(kacheln)
+    if not schon_entdoppelt:
+        kacheln = entdoppeln(kacheln)
     if not kacheln:
         return ""
     from .schema import sekunden_zu_zeit

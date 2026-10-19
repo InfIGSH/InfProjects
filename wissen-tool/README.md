@@ -1,31 +1,66 @@
 # wissen
 
-Liest YouTube-Tutorials, Online-Kurse und PDF-Unterlagen aus und legt sie als
-Markdown in einer zentralen Wissensbasis ab, auf die andere Claude-Projects
-zugreifen können.
+Beschaffungswerkzeug für das Buchprojekt *Ultimate Production Helper*. Holt
+Transkripte, Kursseiten und PDF-Text in den vorhandenen `buch/eingang/`-Ordner.
 
 **Ohne API-Key.** Transkripte kommen aus der Untertitelspur, Kursseiten aus
-einem echten Browser mit deiner Anmeldung, PDFs aus dem Textlayer.
+einem echten Browser mit der eigenen Anmeldung, PDFs aus dem Textlayer.
 
-## Wie es aufgebaut ist
+## Was es abdeckt — und was nicht
 
-Vier Schichten, bewusst getrennt:
+Das Werkzeug ersetzt genau die mechanischen Schritte aus `ANLEITUNG.md`:
 
-| Schicht | macht | liegt in |
+| Schritt | vorher | jetzt |
 | --- | --- | --- |
-| Beschaffung | Transkripte, Seitentexte, Screenshots, PDF-Text holen | `wissen yt` / `kurs` / `pdf` |
-| Normalisierung | alles wird Markdown mit YAML-Frontmatter, feste Ordnerstruktur | `store.py` |
-| Ausarbeitung | Kompendien schreiben | Claude, via `.claude/skills/kompendium` |
-| Ablage | ein Git-Repo als zentrale Quelle | deine Wissensbasis |
+| Ablauf A 2 | Transkript per Scroll+Screenshot aus dem Embedded-Player | `wissen kurs <url>` |
+| Ablauf C 1 | Transkript-Panel in Chrome öffnen, Text lesen, Abdeckung von Hand prüfen | `wissen yt <url>` — Abdeckung wird berechnet |
+| Ablauf C 2 | Rohtranskript mit Kopf in `eingang/` schreiben | passiert automatisch |
+| Ablauf C 6 | Datei nach `eingang/verarbeitet/` verschieben | `wissen verarbeitet <datei>` |
+| Regel 5 | Screenshot zu einer offenen Frage besorgen | `wissen frames <url> --zeit 4:12` |
 
-Die Trennung von `raw/` und `compendia/` ist der Kern: Rohmaterial wird nie
-überschrieben, Kompendien lassen sich jederzeit neu erzeugen, ohne erneut
-auszulesen. Das ist wichtig, weil erneutes Auslesen der teure und fehleranfällige
-Teil ist.
+**Alles andere bleibt Handarbeit nach ANLEITUNG.md:** Delta-Abgleich und
+Delta-Klassen, das Einarbeiten in die Genre-Rezepte und Teil I–V, das
+Konzeptregister, `quellen.md`, die Kursdetaildateien unter `kurse/` und die
+Notion-Meldung an den Learning Coach. Das Werkzeug schreibt ausschließlich
+in `eingang/` und fasst keine andere Datei im `buch/`-Ordner an.
+
+Es liegt deshalb auch keine Skill bei. `ANLEITUNG.md` ist die Anleitung –
+eine zweite daneben würde nur mit ihr konkurrieren.
+
+## Das Kernproblem: der Cross-Origin-iframe
+
+In `ANLEITUNG.md` steht:
+
+> Transkripte sind nur per Scroll+Screenshot lesbar (Cross-Origin-iframe,
+> kein automatischer Texabgriff)
+
+Das gilt für eine Chrome-Erweiterung, deren Skript *in* der Seite läuft – die
+Same-Origin-Policy sperrt sie aus dem Player-iframe aus. Playwright steuert
+den Browser von außen über das Debug-Protokoll und erreicht jeden Frame,
+unabhängig vom Origin. Das Transcript-Panel ist damit direkt als Text
+lesbar, ohne Scrollen und ohne Screenshots.
+
+Gefunden wird das Panel über die **Dichte der Zeitmarken**: ein Container mit
+mindestens fünf Kindelementen, deren ganzer Text eine Zeitangabe ist
+(`0:42`, `12:57`), ist fast immer das Transkript – unabhängig davon, wie die
+Plattform ihre CSS-Klassen nennt. Erst danach wird auf Benennungen wie
+`transcript` geschaut. Findet beides nichts, sagt `wissen inspect`, was auf
+der Seite steht.
+
+## Fortschritts-Buttons
+
+`ANLEITUNG.md`: *„keine Fortschritts-/'Mark as done'-Buttons anklicken"*.
+
+Das Werkzeug klickt nie von sich aus. Geklickt wird ausschließlich, was in
+`wissen.toml` unter `klicks` ausdrücklich steht – und auch das nur, wenn der
+Text des Elements die Sperrliste in `web.py` passiert (`complete`,
+`mark as`, `abgeschlossen`, `weiter`, `submit`, `enroll`, `log out` …). Passt
+ein konfigurierter Selektor versehentlich auf so einen Knopf, wird der Klick
+verweigert und gemeldet statt ausgeführt.
 
 ## Einrichtung
 
-Läuft auf deinem Rechner, nicht in einer Cloud-Session – YouTube sperrt
+Läuft auf dem eigenen Rechner, nicht in einer Cloud-Session: YouTube sperrt
 Rechenzentrums-IPs, und ein Kurs-Login mit Zwei-Faktor braucht ein sichtbares
 Browserfenster.
 
@@ -34,178 +69,175 @@ cd wissen-tool
 bash setup.sh
 ```
 
-Das Skript legt eine virtuelle Umgebung an, installiert die Abhängigkeiten,
-holt Chromium für Playwright und kopiert die Konfigurationsvorlage nach
-`~/.config/wissen/wissen.toml`.
-
-Danach dort den Pfad der Ablage setzen:
+Danach in `~/.config/wissen/wissen.toml` den Pfad setzen:
 
 ```toml
 [ablage]
-pfad = "~/Wissensbasis"
+pfad = "~/Ultimate Production Helper/buch"
 ```
 
-Und die Wissensbasis anlegen:
+Und die Eingangsordner anlegen:
 
 ```bash
 source .venv/bin/activate
 wissen init
-cd ~/Wissensbasis && git init && git add -A && git commit -m "Wissensbasis angelegt"
 ```
-
-`wissen init` legt die Ordnerstruktur an, schreibt ein README, das anderen
-Claude-Projects den Aufbau erklärt, und installiert die Kompendium-Skill unter
-`.claude/skills/kompendium/`.
 
 Voraussetzungen: Python 3.11+, ffmpeg (nur für Screenshots aus Videos).
 Unter Windows statt `setup.sh`: `python -m venv .venv`,
-`.venv\Scripts\activate`, `pip install -e ".[dev]"`, `playwright install chromium`.
+`.venv\Scripts\activate`, `pip install -e ".[dev]"`,
+`playwright install chromium`.
 
 ## Bedienung
 
-### YouTube-Tutorials
+### Einzelvideos (Ablauf C)
 
 ```bash
-wissen yt https://www.youtube.com/watch?v=...
+wissen yt https://www.youtube.com/watch?v=9QkIYDESems --praefix synthwave
 ```
 
-Holt die Untertitelspur und legt sie als Transkript mit Zeitmarken `[mm:ss]`
-alle 30 Sekunden ab. Von Hand erstellte Untertitel gewinnen immer gegen
-automatische – sie haben Interpunktion. Steht im Frontmatter
-`untertitel: automatisch`, ist mit Fehlern bei Fachbegriffen zu rechnen.
+Legt `eingang/synthwave_9QkIYDESems.md` an, mit dem Kopf aus Ablauf C
+Schritt 2 und Zeitmarken alle 30 Sekunden:
 
-Screenshots dazu, wenn du die Stellen schon kennst:
+```markdown
+# Getting Inspired and Recording First Ideas
 
-```bash
-wissen yt https://youtu.be/... --zeit 4:12 --zeit 7:30
+- Kanal: Cubase
+- URL: https://www.youtube.com/watch?v=9QkIYDESems
+- Veröffentlicht: 2024-08-30
+- Erfassungsdatum: 2026-10-19
+- Abdeckung: Transkript 0:00–12:57 von 13:03 (Auto-Captions)
+
+> Rohmaterial — wird nicht ins Buch zitiert.
 ```
 
-Oder – der üblichere Weg – erst das Transkript holen, Claude die erklärenden
-Stellen bestimmen lassen und dann nachziehen:
+Die Abdeckungsprüfung aus Ablauf C Schritt 1 läuft automatisch: reicht die
+letzte Zeitmarke nicht bis eine Minute an die Videolänge, steht
+`UNVOLLSTÄNDIG, n s fehlen` im Kopf und das Werkzeug warnt. Die Schwelle
+ist `max_luecke` in `wissen.toml`.
+
+Von Hand erstellte Untertitel gewinnen immer gegen automatische – sie haben
+Interpunktion. Im Kopf steht, welche Sorte es war, als Hinweis für die
+`(?)`-Markierungen nach Regel 5.
+
+Die rollenden Wiederholungen der Auto-Captions werden entfernt. Unbehandelt
+steht darin jeder Satz zwei- bis dreimal.
+
+### Kurslektionen (Ablauf A)
+
+Einmal anmelden – sichtbares Chromium, Zwei-Faktor von Hand, Sitzung bleibt
+im Profilordner:
 
 ```bash
-wissen frames https://youtu.be/... --zeit 4:12 --zeit 7:30
+wissen login https://campus.thinkspace.ac.uk/
 ```
 
-Die Bilder landen in `assets/` und werden an der passenden Stelle im
-Transkript verlinkt. Es wird **nicht** das ganze Video geladen: ffmpeg springt
-im Stream an die Position und holt nur dieses Einzelbild.
-
-### Online-Kurse hinter Login
-
-Einmal anmelden:
+Dann eine Lektion:
 
 ```bash
-wissen login https://lernplattform.de/login
+wissen kurs "https://campus.thinkspace.ac.uk/..." \
+  --praefix thinkspace_how-to-write-cinematic-music \
+  --modul "Modul 2: How to Write a Melody" \
+  --lektion "Theme Writing with Bruce Broughton"
 ```
 
-Es öffnet sich ein sichtbares Chromium. Du meldest dich an – inklusive
-Zwei-Faktor – und navigierst einmal in den Kurs. Die Sitzung bleibt im
-Profilordner, alle späteren Aufrufe nutzen sie weiter. Es wird kein Passwort
-gespeichert, nur die Cookies, die der Browser ohnehin hält.
-
-Danach einzelne Seiten:
+Oder ein ganzes Modul aus einer URL-Liste – der Browser bleibt dabei offen,
+die Anmeldung gilt durchgehend:
 
 ```bash
-wissen kurs https://lernplattform.de/kurs/lektion-1 --kurs "Python Grundkurs" --lektion 1
-```
-
-Oder einen ganzen Kurs aus einer URL-Liste – das ist der Normalfall:
-
-```bash
-cat > python-kurs.txt <<'EOF'
-https://lernplattform.de/kurs/lektion-1 | Einführung
-https://lernplattform.de/kurs/lektion-2 | Variablen
-https://lernplattform.de/kurs/lektion-3
+cat > modul2.txt <<'EOF'
+https://campus.thinkspace.ac.uk/... | Introduction and Overview
+https://campus.thinkspace.ac.uk/... | How to Write a Melody
+https://campus.thinkspace.ac.uk/... | Theme Writing with Bruce Broughton
 EOF
 
-wissen kurs --liste python-kurs.txt --kurs "Python Grundkurs"
+wissen kurs --liste modul2.txt --praefix thinkspace_how-to-write-cinematic-music
 ```
 
-Die Zeilennummer wird zur Lektionsnummer, die Kursreihenfolge bleibt also
-erhalten. Zeilen mit `#` werden übersprungen. Gespeichert werden Seitentext
-**und** Transkript, getrennt voneinander. Mit `--screenshot` kommt ein Bild
-der ganzen Seite dazu.
+Transkript und Seitentext landen als getrennte Abschnitte in einer Datei –
+die automatische Seiten-Summary wird nicht angefasst, wie in `ANLEITUNG.md`
+gefordert.
 
-### PDF-Kurse und Trainingseinheiten
+### Wenn kein Transkript gefunden wird
 
 ```bash
-wissen pdf ~/Downloads/Trainingsplan.pdf --kurs "Krafttraining Winter"
-wissen pdf ~/Downloads/Kursunterlagen/ --kurs "Statik Grundlagen"
+wissen inspect "https://campus.thinkspace.ac.uk/..." --ausgabe ./berichte
 ```
 
-Beim Ordner werden alle PDFs alphabetisch eingelesen und durchnummeriert –
-bei Dateinamen wie `01 Einführung.pdf` ergibt das direkt die richtige
-Gliederung. Der Text bekommt Seitenmarken `[Seite n]`, das Original wird
-danebengelegt.
+Öffnet die Seite mit der vorhandenen Anmeldung, geht jeden Frame durch und
+schreibt einen Bericht: Frames mit Textmenge, alle Kandidaten mit fertigem
+Selektor, Zeitmarkenzahl und Textvorschau, dazu Seitenbild und Frame-HTML zum
+Nachsehen – und am Ende einen Block zum Hineinkopieren in `wissen.toml`.
+Liest nur, klickt nichts. Ein eingeklapptes Panel lässt sich mit
+`--klick '<selektor>'` einmalig mitöffnen; auch das läuft durch die
+Sperrliste.
 
-Gescannte PDFs ohne Textlayer werden erkannt und im Frontmatter mit
-`braucht_ocr: true` markiert. Nachbearbeiten und erneut einlesen:
+### Screenshots zu offenen Fragen (Regel 5)
+
+Regel 5 der Genre-Rezepte: *was nur im Bild zu sehen ist, wird nicht geraten
+→ offene Frage mit Timestamp; übernommen erst mit Screenshot.* Genau diese
+Timestamps kommen hier herein:
 
 ```bash
-ocrmypdf -l deu --skip-text alt.pdf neu.pdf
+wissen frames https://youtu.be/9QkIYDESems --zeit 4:12 --zeit 7:30
 ```
 
-### Kompendien
+Die Bilder landen in `eingang/media/<video-id>/` und werden an der passenden
+Stelle im Transkript verlinkt. Es wird **nicht** das ganze Video geladen:
+ffmpeg springt im Stream an die Position und holt nur dieses Einzelbild.
 
-Die Rohdaten sind Material, kein Lernstoff. Das Ausarbeiten macht Claude in
-deiner Wissensbasis:
+### PDFs
 
 ```bash
-cd ~/Wissensbasis
-claude "Erstelle ein Kompendium zum Kurs python-grundkurs"
+wissen pdf ~/Downloads/Kursunterlagen/ --praefix jovani --kurs "Marc Jovani"
 ```
 
-Die mitgelieferte Skill `kompendium` legt fest, wie: Gliederung nach Sache
-statt nach Quellenreihenfolge, jede Aussage mit Rückverweis auf Zeitmarke
-oder Seite, Code wortgetreu, Screenshots nur wo das Wort nicht reicht.
+Alphabetisch eingelesen und durchnummeriert, Seitenmarken `[Seite n]`,
+Original nach `eingang/media/`. Ein PDF gilt als Scan, wenn mindestens die
+Hälfte der Seiten keinen Text hergibt – ein kurzes Titel- oder Übungsblatt
+löst die Meldung also nicht aus. Nachbearbeiten mit
+`ocrmypdf -l deu --skip-text alt.pdf neu.pdf`.
 
-## Zugriff aus anderen Claude-Projects
+### Rückstand und Abschluss
 
-Die Wissensbasis ist ein Git-Repo mit reinem Markdown. Das ist absichtlich
-das langweiligste mögliche Format – es ist versioniert, diffbar, durchsuchbar
-und von allem lesbar.
+```bash
+wissen eingang                              # was liegt noch da
+wissen quellen synthwave_9QkIYDESems.md     # Entwurf für quellen.md
+wissen verarbeitet synthwave_9QkIYDESems.md # Ablauf C 6
+```
 
-- **claude.ai-Projects**: über den GitHub-Connector das Wissens-Repo einbinden
-- **Claude Code**: das Repo klonen oder im Arbeitsverzeichnis mit anmelden
-- **Notion oder Drive** als zusätzliche Leseoberfläche, falls du am Handy
-  darauf zugreifen willst – aber nicht als einzige Ablage
+`wissen quellen` gibt nur einen Textentwurf aus; `quellen.md` selbst wird
+nicht angefasst. Beim Verschieben werden relative Bildlinks mitgezogen, weil
+die Datei eine Ebene tiefer rutscht.
 
-`INDEX.md` ist der Einstieg. Es wird nach jedem Einlesen neu erzeugt und soll
-verhindern, dass Claude den ganzen Bestand lesen muss, um etwas zu finden.
-Bei Stapelverarbeitung mit `--kein-index` sparen und am Ende einmal
-`wissen index` laufen lassen.
+## Selektoren hinterlegen
 
-## Wenn etwas nicht klappt
-
-**Kein Transkript auf der Kursseite gefunden.** Das Werkzeug sucht mit
-Heuristiken nach dem Panel. Wenn die Plattform es anders benennt: im Browser
-mit Rechtsklick → *Untersuchen* die Klasse oder ID ablesen und in
-`wissen.toml` hinterlegen.
+Sobald `wissen inspect` den richtigen Selektor gezeigt hat:
 
 ```toml
-[hosts."lernplattform.de"]
-klicks = ["button[data-purpose='transcript-toggle']"]
-transkript = ["[data-purpose='transcript-panel']"]
-inhalt = ["div.lesson-body"]
+[hosts."campus.thinkspace.ac.uk"]
+plattform = "Thinkspace Education"
+klicks = ["button[aria-label='Transcript']"]
+transkript = ["#transcript-panel"]
+inhalt = ["div.lesson-content"]
 ```
 
-`klicks` öffnet ein eingeklapptes Panel, `transkript` liest es aus, `inhalt`
-begrenzt den Seitentext. Der genaueste passende Host gewinnt, `lernplattform.de`
-kann also eine Grundregel setzen und `kurse.lernplattform.de` sie verfeinern.
+Der genaueste passende Host gewinnt, `thinkspace.ac.uk` kann also eine
+Grundregel setzen und `campus.thinkspace.ac.uk` sie verfeinern.
 
-**Seite lädt nicht fertig.** `warte_ms` in `wissen.toml` hochsetzen.
+## Weitere Störungen
 
-**Portal merkt die Automatisierung.** `--headless` weglassen. Ein sichtbares
+**Seite lädt nicht fertig** → `warte_ms` hochsetzen.
+
+**Portal merkt die Automatisierung** → `--headless` weglassen. Ein sichtbares
 Fenster wird deutlich seltener blockiert.
 
-**YouTube liefert keine Untertitel.** Meist gibt es sie in der gewünschten
-Sprache nicht – die Fehlermeldung nennt die vorhandenen. Dann `sprachen` in
-`wissen.toml` anpassen.
+**YouTube liefert keine Untertitel** → meist gibt es sie in der gewünschten
+Sprache nicht; die Fehlermeldung nennt die vorhandenen. `sprachen` anpassen.
 
-**Keine Screenshots.** ffmpeg fehlt, oder YouTube hat die Stream-URL gesperrt.
-Das Werkzeug fällt dann automatisch darauf zurück, nur die zwei Sekunden um
-den Zeitpunkt herunterzuladen.
+**Keine Screenshots** → ffmpeg fehlt, oder YouTube hat die Stream-URL
+gesperrt. Dann lädt das Werkzeug ersatzweise nur die zwei Sekunden um den
+Zeitpunkt.
 
 ## Tests
 
@@ -213,14 +245,15 @@ den Zeitpunkt herunterzuladen.
 .venv/bin/python -m pytest
 ```
 
-Abgedeckt sind die netzunabhängigen Teile: Untertitel-Verarbeitung inklusive
-der rollenden Wiederholungen, Ablage und Index, PDF-Einlesen, Konfiguration,
-Spur- und Formatwahl. Was Netz braucht – der eigentliche YouTube-Abruf und die
-Browser-Automatisierung – ist nicht automatisch getestet.
+129 Tests über die netzunabhängigen Teile: Untertitel-Verarbeitung samt
+Entdoppelung, Abdeckungsrechnung, Dateikopf, Ablage und Verschieben,
+`quellen.md`-Entwurf, PDF-Einlesen, Konfiguration, Spur- und Formatwahl und
+die Sperrliste für Fortschritts-Buttons. Was Netz braucht – der YouTube-Abruf
+und die Browser-Automatisierung – ist nicht automatisch getestet.
 
 ## Rechtliches
 
 Massendownloads verstoßen bei YouTube und den meisten Kursplattformen gegen
 die Nutzungsbedingungen. Für den eigenen Lernbestand ist das üblich; für
 Weitergabe oder Veröffentlichung ist es das nicht. Jede abgelegte Datei trägt
-dazu einen Hinweis im Frontmatter.
+den Hinweis, dass sie Rohmaterial ist und nicht ins Buch zitiert wird.

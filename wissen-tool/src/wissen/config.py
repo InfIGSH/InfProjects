@@ -26,6 +26,7 @@ class Konfig:
     browser_profil: Path
     sprachen: list[str] = field(default_factory=lambda: list(STANDARD_SPRACHEN))
     marke_alle: int = 30
+    max_luecke: int = 60
     warte_ms: int = 1500
     hosts: dict = field(default_factory=dict)
     quelle: Path | None = None
@@ -89,6 +90,7 @@ def lade(explizit: str | os.PathLike | None = None) -> Konfig:
         browser_profil=Path(profil_roh).expanduser().resolve(),
         sprachen=list(youtube.get("sprachen") or STANDARD_SPRACHEN),
         marke_alle=int(youtube.get("marke_alle", 30)),
+        max_luecke=int(youtube.get("max_luecke", 60)),
         warte_ms=int(web.get("warte_ms", 1500)),
         hosts=daten.get("hosts") or {},
         quelle=pfad,

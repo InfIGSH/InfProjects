@@ -3,6 +3,10 @@
 Beides laeuft ohne API-Key. Das Transkript kommt aus der Untertitelspur
 (auch der automatisch erzeugten), die Bilder zieht ffmpeg direkt aus dem
 Videostream -- es wird nur der angefragte Augenblick geladen, nicht das Video.
+
+Die Abdeckung wird gegen die Videolaenge geprueft (ANLEITUNG.md, Ablauf C
+Schritt 1): reicht die letzte Zeitmarke nicht bis etwa eine Minute an das
+Ende, ist das Transkript unvollstaendig und das Werkzeug sagt es.
 """
 
 from __future__ import annotations
@@ -11,6 +15,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import schema, vtt
@@ -25,6 +30,14 @@ _ZEITMARKE = re.compile(r"^\[(\d{1,2}:\d{2}(?::\d{2})?)\]")
 
 class YoutubeFehler(RuntimeError):
     pass
+
+
+@dataclass
+class Ergebnis:
+    pfad: Path
+    felder: dict
+    luecke: float | None
+    vollstaendig: bool
 
 
 def _ydl(extra: dict | None = None):
@@ -83,59 +96,61 @@ def _waehle_spur(info: dict, sprachen: list[str]) -> tuple[str, str, str, bool]:
     )
 
 
+def _datum(info: dict) -> str | None:
+    roh = info.get("upload_date")
+    if roh and len(str(roh)) == 8:
+        roh = str(roh)
+        return f"{roh[:4]}-{roh[4:6]}-{roh[6:]}"
+    return None
+
+
 def lade_transkript(
     cfg: Konfig,
     ablage: Ablage,
     url: str,
     *,
+    praefix: str,
     kurs: str | None = None,
-    lektion: int | None = None,
-    tags: list[str] | None = None,
-) -> tuple[Path, dict]:
-    """Holt Transkript und Metadaten eines Videos und legt sie ab."""
+    modul: str | None = None,
+    lektion: str | None = None,
+) -> Ergebnis:
+    """Holt Transkript und Metadaten eines Videos und legt sie im Eingang ab."""
     info = _info(url)
     sprache, format_name, spur_url, automatisch = _waehle_spur(info, cfg.sprachen)
 
     with _ydl() as ydl:
         rohdaten = ydl.urlopen(spur_url).read().decode("utf-8", "replace")
 
-    kacheln = vtt.parse(rohdaten, format_name)
-    text = vtt.zu_text(kacheln, cfg.marke_alle)
-    if not text.strip():
+    kacheln = vtt.entdoppeln(vtt.parse(rohdaten, format_name))
+    if not kacheln:
         raise YoutubeFehler(
             f"Die Untertitelspur ({sprache}/{format_name}) war leer oder nicht lesbar."
         )
+    text = vtt.zu_text(kacheln, cfg.marke_alle, schon_entdoppelt=True)
+
+    dauer = info.get("duration")
+    letzte = kacheln[-1].ende
+    luecke = schema.abdeckung_luecke(letzte, dauer)
+    vollstaendig = luecke is None or luecke <= cfg.max_luecke
 
     video_id = info.get("id") or schema.kurz_hash(url)
-    meta = schema.neues_frontmatter(
-        id=f"yt:{video_id}",
-        typ="youtube",
-        titel=info.get("title") or video_id,
-        quelle=info.get("webpage_url") or url,
-        kurs=kurs,
-        lektion=lektion,
-        sprache=sprache,
-        dauer=info.get("duration"),
-        tags=tags or [],
-    )
-    if info.get("uploader"):
-        meta["kanal"] = info["uploader"]
-    meta["untertitel"] = "automatisch" if automatisch else "manuell"
+    felder = {
+        "Titel": info.get("title") or video_id,
+        "Kanal": info.get("uploader") or info.get("channel"),
+        "Kurs": kurs,
+        "Modul": modul,
+        "Lektion": lektion,
+        "URL": info.get("webpage_url") or url,
+        "Veröffentlicht": _datum(info),
+        "Erfassungsdatum": schema.heute(),
+        "Abdeckung": schema.abdeckung(letzte, dauer, automatisch),
+    }
+    if not vollstaendig:
+        felder["Abdeckung"] += f" — UNVOLLSTÄNDIG, {int(luecke)} s fehlen"
 
-    kopf = [f"# {meta['titel']}", ""]
-    if info.get("uploader"):
-        kopf.append(f"Kanal: {info['uploader']}")
-    if info.get("duration"):
-        kopf.append(f"Laenge: {schema.sekunden_zu_zeit(info['duration'])}")
-    kopf.append(f"Quelle: {meta['quelle']}")
-    kopf.append(
-        "Untertitel: " + ("automatisch erzeugt (Fehler moeglich)" if automatisch
-                          else "vom Kanal erstellt")
-    )
-    kopf += ["", "## Transkript", ""]
-
-    pfad = ablage.schreibe(meta, "\n".join(kopf) + "\n" + text)
-    return pfad, meta
+    pfad = ablage.eingang_pfad(praefix, video_id)
+    ablage.schreibe(felder, text, pfad)
+    return Ergebnis(pfad, felder, luecke, vollstaendig)
 
 
 # -- Einzelbilder --------------------------------------------------------
@@ -247,24 +262,29 @@ def hole_frames(
 ) -> tuple[Path, list[str]]:
     """Zieht Einzelbilder zu den angegebenen Zeitpunkten und traegt sie ein.
 
-    Das zugehoerige Transkript muss schon abgelegt sein -- die Bilder werden
-    in dessen Frontmatter und an der passenden Stelle im Text verlinkt.
+    Gedacht fuer Regel 5 der Genre-Rezepte: was nur im Bild zu sehen ist, wird
+    nicht geraten, sondern als offene Frage mit Timestamp vermerkt und erst mit
+    Screenshot uebernommen. Genau diese Timestamps kommen hier herein.
     """
     info = _info(url)
     video_id = info.get("id") or schema.kurz_hash(url)
-    quellen_id = f"yt-{video_id}"
 
-    dok = ablage.finde_nach_id(f"yt:{video_id}")
+    dok = ablage.finde_nach_url(info.get("webpage_url") or url)
     if dok is None:
         raise YoutubeFehler(
-            f"Zu Video {video_id} liegt noch kein Transkript in der Ablage. "
-            f"Erst 'wissen yt {url}' ausfuehren."
+            f"Zu {url} liegt noch kein Rohtranskript im Eingang. "
+            "Erst 'wissen yt ...' ausfuehren."
         )
 
     fmt = _waehle_format(info)
-    ordner = ablage.asset_ordner(quellen_id)
-    meta, body = schema.frontmatter_load(dok.read_text(encoding="utf-8"))
-    assets = list(meta.get("assets") or [])
+    ordner = ablage.media_ordner(video_id)
+    text = dok.read_text(encoding="utf-8")
+    felder = schema.kopf_lesen(text)
+    body = text.split("\n---\n", 1)[-1]
+
+    vorhanden = [
+        s.strip() for s in (felder.get("Screenshots") or "").split(",") if s.strip()
+    ]
     neu: list[str] = []
 
     for sekunden in sorted(set(zeiten)):
@@ -273,11 +293,11 @@ def hole_frames(
             if not _frame_aus_stream(fmt, sekunden, ziel):
                 _frame_aus_abschnitt(url, fmt.get("format_id") or "best", sekunden, ziel)
         rel = ablage.rel(ziel)
-        if rel not in assets:
-            assets.append(rel)
+        if rel not in vorhanden:
+            vorhanden.append(rel)
             neu.append(rel)
         body = _bild_einfuegen(body, ablage.rel_von(ziel, dok), sekunden)
 
-    meta["assets"] = assets
-    ablage.schreibe(meta, body, pfad=dok)
+    felder["Screenshots"] = ", ".join(vorhanden)
+    ablage.schreibe(felder, body, pfad=dok)
     return dok, neu

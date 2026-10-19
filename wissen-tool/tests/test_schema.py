@@ -39,51 +39,102 @@ def test_zeit_zu_sekunden_meldet_unsinn(eingabe):
 @pytest.mark.parametrize(
     "sekunden,erwartet", [(252, "04:12"), (3723, "01:02:03"), (0, "00:00"), (59, "00:59")]
 )
-def test_sekunden_zu_zeit(sekunden, erwartet):
+def test_sekunden_zu_zeit_ist_gepolstert(sekunden, erwartet):
     assert schema.sekunden_zu_zeit(sekunden) == erwartet
+
+
+@pytest.mark.parametrize(
+    "sekunden,erwartet", [(0, "0:00"), (777, "12:57"), (783, "13:03"), (3723, "1:02:03")]
+)
+def test_zeit_kurz_ohne_polsterung(sekunden, erwartet):
+    assert schema.zeit_kurz(sekunden) == erwartet
 
 
 def test_zeit_fuer_dateiname_ohne_doppelpunkt():
     assert schema.zeit_fuer_dateiname(3723) == "01-02-03"
 
 
-def test_frontmatter_rundlauf():
-    meta = schema.neues_frontmatter(
-        id="yt:abc", typ="youtube", titel="Schlüssel & Wörter", quelle="https://x",
-        tags=["krypto"],
+# -- Abdeckung (ANLEITUNG, Ablauf C Schritt 1) ---------------------------
+
+
+def test_abdeckung_entspricht_dem_format_in_quellen_md():
+    # Vorbild: "Transkript 0:00–12:57 von 13:03 (Auto-Captions)"
+    assert schema.abdeckung(777, 783, True) == (
+        "Transkript 0:00–12:57 von 13:03 (Auto-Captions)"
     )
-    text = schema.dokument(meta, "# Titel\n\nInhalt")
-    zurueck, body = schema.frontmatter_load(text)
-    assert zurueck["id"] == "yt:abc"
-    assert zurueck["titel"] == "Schlüssel & Wörter"
-    assert zurueck["tags"] == ["krypto"]
-    assert body.strip() == "# Titel\n\nInhalt"
 
 
-def test_frontmatter_feldreihenfolge_bleibt_stabil():
-    meta = schema.neues_frontmatter(id="x", typ="pdf", titel="T", quelle="q")
-    meta["eigenes_feld"] = "wert"
-    kopf = schema.frontmatter_dump(meta)
-    assert kopf.index("id:") < kopf.index("typ:") < kopf.index("titel:")
-    # Unbekannte Felder gehen nicht verloren, landen aber hinten.
-    assert kopf.index("lizenz_hinweis:") < kopf.index("eigenes_feld:")
+def test_abdeckung_nennt_manuelle_untertitel():
+    assert "Untertitel vom Kanal" in schema.abdeckung(100, 120, False)
 
 
-def test_frontmatter_load_ohne_kopf():
-    meta, body = schema.frontmatter_load("# Nur Text")
-    assert meta == {}
-    assert body == "# Nur Text"
+def test_abdeckung_ohne_bekannte_gesamtlaenge():
+    assert schema.abdeckung(100, None, True) == "Transkript 0:00–1:40 (Auto-Captions)"
 
 
-def test_frontmatter_load_bei_unvollstaendigem_kopf():
-    # Oeffnendes '---' ohne schliessendes: Text unveraendert zurueckgeben.
-    meta, body = schema.frontmatter_load("---\nid: x\nkein Ende")
-    assert meta == {}
-    assert body.startswith("---")
+@pytest.mark.parametrize(
+    "letzte,gesamt,erwartet", [(777, 783, 6), (100, 600, 500), (800, 783, 0)]
+)
+def test_abdeckung_luecke(letzte, gesamt, erwartet):
+    assert schema.abdeckung_luecke(letzte, gesamt) == erwartet
 
 
-def test_frontmatter_dump_laesst_none_weg():
-    meta = schema.neues_frontmatter(id="x", typ="pdf", titel="T", quelle="q")
-    kopf = schema.frontmatter_dump(meta)
-    assert "kurs:" not in kopf
-    assert "lektion:" not in kopf
+def test_abdeckung_luecke_ohne_gesamtlaenge():
+    assert schema.abdeckung_luecke(100, None) is None
+
+
+# -- Dateikopf -----------------------------------------------------------
+
+
+def test_kopf_rundlauf():
+    felder = {
+        "Titel": "Getting Inspired and Recording First Ideas",
+        "Kanal": "Cubase",
+        "URL": "https://www.youtube.com/watch?v=9QkIYDESems",
+        "Veröffentlicht": "2024-08-30",
+        "Erfassungsdatum": "2026-10-19",
+        "Abdeckung": "Transkript 0:00–12:57 von 13:03 (Auto-Captions)",
+    }
+    text = schema.dokument(felder, "[00:00] Hallo.")
+    zurueck = schema.kopf_lesen(text)
+    for name, wert in felder.items():
+        assert zurueck[name] == wert
+
+
+def test_kopf_haelt_die_feldreihenfolge():
+    kopf = schema.kopf_bauen({
+        "Titel": "T", "Abdeckung": "A", "Kanal": "K", "URL": "U",
+    })
+    assert kopf.index("- Kanal:") < kopf.index("- URL:") < kopf.index("- Abdeckung:")
+
+
+def test_kopf_laesst_leere_felder_weg():
+    kopf = schema.kopf_bauen({"Titel": "T", "Kanal": None, "Kurs": "", "Modul": []})
+    assert "Kanal" not in kopf
+    assert "Kurs" not in kopf
+    assert "Modul" not in kopf
+
+
+def test_kopf_behaelt_unbekannte_felder():
+    kopf = schema.kopf_bauen({"Titel": "T", "Original": "eingang/media/x/a.pdf"})
+    assert "- Original: eingang/media/x/a.pdf" in kopf
+
+
+def test_kopf_enthaelt_rohmaterial_hinweis():
+    # ANLEITUNG, Ablauf C Schritt 2: "Rohmaterial -- wird nicht ins Buch zitiert."
+    assert "Rohmaterial" in schema.kopf_bauen({"Titel": "T"})
+    assert "Rohmaterial" not in schema.kopf_bauen({"Titel": "T"}, hinweis=None)
+
+
+def test_kopf_lesen_stoppt_an_der_trennlinie():
+    # Nach '---' beginnt das Transkript; dort darf nichts mehr als Feld gelten.
+    text = schema.dokument({"Titel": "T", "Kanal": "K"}, "- Kanal: falsch\n\n[00:00] x")
+    assert schema.kopf_lesen(text)["Kanal"] == "K"
+
+
+def test_kopf_lesen_ohne_kopf():
+    assert schema.kopf_lesen("[00:00] nur Text") == {}
+
+
+def test_dokument_endet_mit_zeilenumbruch():
+    assert schema.dokument({"Titel": "T"}, "Inhalt").endswith("Inhalt\n")

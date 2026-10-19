@@ -1,8 +1,8 @@
-"""Metadaten-Schema der Wissensbasis: Slugs, IDs, Frontmatter.
+"""Dateikopf und Hilfsfunktionen.
 
-Jedes Dokument in der Wissensbasis ist eine Markdown-Datei mit YAML-Frontmatter.
-Das Frontmatter ist die einzige Stelle, aus der Indizes und Kompendien gebaut
-werden -- der Fliesstext bleibt unangetastete Rohform.
+Der Kopf folgt dem Format aus ANLEITUNG.md, Ablauf C Schritt 2:
+Titel, Kanal, URL, Erfassungsdatum, Abdeckung. Kein YAML -- die Dateien in
+`eingang/` sind Rohmaterial im selben Stil wie die bereits vorhandenen.
 """
 
 from __future__ import annotations
@@ -12,8 +12,6 @@ import hashlib
 import re
 import unicodedata
 
-import yaml
-
 # Umlaute vor dem Normalisieren ersetzen, sonst fallen sie zu "a"/"o"/"u"
 # zusammen und "Loeschen"/"Laeschen" werden ununterscheidbar.
 _ERSATZ = {
@@ -21,13 +19,13 @@ _ERSATZ = {
     "Ä": "Ae", "Ö": "Oe", "Ü": "Ue",
 }
 
-LIZENZ_HINWEIS = "Gespeicherte Kopie fuer persoenliche Lernzwecke."
+ROHMATERIAL_HINWEIS = "Rohmaterial — wird nicht ins Buch zitiert."
 
-#: Reihenfolge der Frontmatter-Felder, damit Diffs lesbar bleiben.
-FELDER = [
-    "id", "typ", "titel", "quelle", "abgerufen", "kurs", "lektion",
-    "sprache", "dauer", "seiten", "tags", "assets", "original",
-    "lizenz_hinweis",
+#: Reihenfolge der Kopffelder.
+KOPFFELDER = [
+    "Titel", "Kanal", "Plattform", "Kurs", "Modul", "Lektion",
+    "URL", "Datei", "Veröffentlicht", "Erfassungsdatum", "Abdeckung",
+    "Screenshots", "Original",
 ]
 
 
@@ -60,6 +58,9 @@ def heute() -> str:
     return _dt.date.today().isoformat()
 
 
+# -- Zeitangaben ---------------------------------------------------------
+
+
 def zeit_zu_sekunden(wert: str) -> int:
     """'4:12' -> 252, '1:02:03' -> 3723, '252' -> 252."""
     teile = [t.strip() for t in str(wert).split(":")]
@@ -72,7 +73,7 @@ def zeit_zu_sekunden(wert: str) -> int:
 
 
 def sekunden_zu_zeit(sekunden: float) -> str:
-    """252 -> '04:12', 3723 -> '01:02:03'."""
+    """Gepolsterte Form fuer Transkript-Marken: 252 -> '04:12'."""
     sekunden = int(sekunden)
     stunden, rest = divmod(sekunden, 3600)
     minuten, sek = divmod(rest, 60)
@@ -81,59 +82,90 @@ def sekunden_zu_zeit(sekunden: float) -> str:
     return f"{minuten:02d}:{sek:02d}"
 
 
+def zeit_kurz(sekunden: float) -> str:
+    """Form fuer die Abdeckungszeile: 0 -> '0:00', 777 -> '12:57'."""
+    sekunden = int(sekunden)
+    stunden, rest = divmod(sekunden, 3600)
+    minuten, sek = divmod(rest, 60)
+    if stunden:
+        return f"{stunden}:{minuten:02d}:{sek:02d}"
+    return f"{minuten}:{sek:02d}"
+
+
 def zeit_fuer_dateiname(sekunden: float) -> str:
     """Wie sekunden_zu_zeit, aber mit '-' statt ':' fuer Dateinamen."""
     return sekunden_zu_zeit(sekunden).replace(":", "-")
 
 
-def neues_frontmatter(**werte) -> dict:
-    """Legt ein Frontmatter mit Standardwerten an."""
-    meta = {
-        "id": None,
-        "typ": None,
-        "titel": None,
-        "quelle": None,
-        "abgerufen": heute(),
-        "kurs": None,
-        "lektion": None,
-        "sprache": None,
-        "tags": [],
-        "assets": [],
-        "lizenz_hinweis": LIZENZ_HINWEIS,
-    }
-    meta.update(werte)
-    return meta
+def abdeckung(letzte_marke: float, gesamtlaenge: float | None, automatisch: bool) -> str:
+    """Baut die Abdeckungszeile: 'Transkript 0:00–12:57 von 13:03 (Auto-Captions)'."""
+    quelle = "Auto-Captions" if automatisch else "Untertitel vom Kanal"
+    if gesamtlaenge:
+        return (
+            f"Transkript 0:00–{zeit_kurz(letzte_marke)} "
+            f"von {zeit_kurz(gesamtlaenge)} ({quelle})"
+        )
+    return f"Transkript 0:00–{zeit_kurz(letzte_marke)} ({quelle})"
 
 
-def frontmatter_dump(meta: dict) -> str:
-    """Serialisiert Frontmatter in stabiler Feldreihenfolge."""
-    geordnet = {f: meta[f] for f in FELDER if f in meta and meta[f] is not None}
+def abdeckung_luecke(letzte_marke: float, gesamtlaenge: float | None) -> float | None:
+    """Sekunden zwischen letzter Zeitmarke und Videoende.
+
+    ANLEITUNG, Ablauf C Schritt 1: der letzte Timestamp muss bis etwa eine
+    Minute an die Videolaenge heranreichen, sonst ist das Transkript
+    unvollstaendig.
+    """
+    if not gesamtlaenge:
+        return None
+    return max(0.0, gesamtlaenge - letzte_marke)
+
+
+# -- Dateikopf -----------------------------------------------------------
+
+
+def kopf_bauen(felder: dict, hinweis: str | None = ROHMATERIAL_HINWEIS) -> str:
+    """Baut den Markdown-Kopf in fester Feldreihenfolge."""
+    titel = felder.get("Titel") or "Ohne Titel"
+    zeilen = [f"# {titel}", ""]
+    for name in KOPFFELDER:
+        if name == "Titel":
+            continue
+        wert = felder.get(name)
+        if wert is None or wert == "" or wert == []:
+            continue
+        if isinstance(wert, list):
+            wert = ", ".join(str(w) for w in wert)
+        zeilen.append(f"- {name}: {wert}")
     # Felder, die das Schema noch nicht kennt, hinten anhaengen statt verlieren.
-    for key, wert in meta.items():
-        if key not in geordnet and wert is not None:
-            geordnet[key] = wert
-    rumpf = yaml.safe_dump(
-        geordnet, allow_unicode=True, sort_keys=False, default_flow_style=False
-    )
-    return f"---\n{rumpf}---\n"
+    for name, wert in felder.items():
+        if name not in KOPFFELDER and wert not in (None, "", []):
+            zeilen.append(f"- {name}: {wert}")
+    if hinweis:
+        zeilen += ["", f"> {hinweis}"]
+    zeilen += ["", "---", "", ""]
+    return "\n".join(zeilen)
 
 
-def frontmatter_load(text: str) -> tuple[dict, str]:
-    """Trennt Frontmatter und Fliesstext. Ohne Frontmatter: ({}, text)."""
-    if not text.startswith("---"):
-        return {}, text
-    zeilen = text.split("\n")
-    for nr in range(1, len(zeilen)):
-        if zeilen[nr].strip() == "---":
-            kopf = "\n".join(zeilen[1:nr])
-            rest = "\n".join(zeilen[nr + 1:])
-            meta = yaml.safe_load(kopf) or {}
-            if not isinstance(meta, dict):
-                return {}, text
-            return meta, rest.lstrip("\n")
-    return {}, text
+def kopf_lesen(text: str) -> dict:
+    """Liest den Kopf einer Rohmaterialdatei zurueck.
+
+    Gelesen wird bis zur Trennlinie `---`; danach beginnt das Transkript und
+    dort koennen Zeilen stehen, die wie Kopffelder aussehen.
+    """
+    felder: dict = {}
+    for zeile in text.split("\n"):
+        blank = zeile.strip()
+        if blank == "---":
+            break
+        if blank.startswith("# "):
+            felder["Titel"] = blank[2:].strip()
+            continue
+        treffer = re.match(r"^-\s+([^:]{1,40}):\s*(.+)$", blank)
+        if treffer:
+            felder[treffer.group(1).strip()] = treffer.group(2).strip()
+    return felder
 
 
-def dokument(meta: dict, body: str) -> str:
+def dokument(felder: dict, body: str, hinweis: str | None = ROHMATERIAL_HINWEIS) -> str:
     """Baut die komplette Markdown-Datei."""
-    return frontmatter_dump(meta) + "\n" + body.strip() + "\n"
+    return kopf_bauen(felder, hinweis) + body.strip() + "\n"

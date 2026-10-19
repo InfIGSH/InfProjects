@@ -15,6 +15,7 @@ def test_lade_minimal(tmp_path):
     assert cfg.ablage == tmp_path / "Basis"
     assert cfg.sprachen == config.STANDARD_SPRACHEN
     assert cfg.marke_alle == 30
+    assert cfg.max_luecke == 60
     assert cfg.quelle == pfad
 
 
@@ -27,12 +28,14 @@ profil = "{tmp_path / "profil"}"
 [youtube]
 sprachen = ["de"]
 marke_alle = 60
+max_luecke = 90
 [web]
 warte_ms = 3000
 """)
     cfg = config.lade(pfad)
     assert cfg.sprachen == ["de"]
     assert cfg.marke_alle == 60
+    assert cfg.max_luecke == 90
     assert cfg.warte_ms == 3000
     assert cfg.browser_profil == tmp_path / "profil"
 

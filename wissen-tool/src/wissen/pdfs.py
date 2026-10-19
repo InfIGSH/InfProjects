@@ -1,8 +1,8 @@
-"""PDF-Kurse und Trainingseinheiten einlesen und einsortieren.
+"""PDF-Kurse und Trainingseinheiten einlesen.
 
 Der Text bekommt Seitenmarken `[Seite n]` -- dasselbe Prinzip wie die
-Zeitmarken im Transkript, damit ein Kompendium praezise zurueckverweisen kann.
-Das Original-PDF wird neben das Textdokument gelegt.
+Zeitmarken im Transkript, damit ein Beleg nach Regel 2 der Genre-Rezepte
+auch bei PDF-Quellen praezise zurueckverweisen kann.
 """
 
 from __future__ import annotations
@@ -14,8 +14,13 @@ from . import schema
 from .config import Konfig
 from .store import Ablage
 
-#: Unter so vielen Zeichen pro Seite gehen wir von einem Scan ohne Textlayer aus.
-MIN_ZEICHEN_PRO_SEITE = 40
+#: Eine Seite mit weniger Zeichen gilt als leer (Scan, Bildseite, Trennblatt).
+MIN_ZEICHEN_PRO_SEITE = 10
+
+#: Ab diesem Anteil leerer Seiten gilt das PDF als Scan ohne Textlayer.
+#: Nicht am Durchschnitt gemessen -- sonst gilt ein kurzes Titel- oder
+#: Uebungsblatt faelschlich als Scan, obwohl sein Text sauber auslesbar ist.
+MAX_LEERE_SEITEN = 0.5
 
 _GENERISCH = re.compile(
     r"^(untitled|unbenannt|microsoft word|dokument\d*|pr(ae|ä)sentation\d*)",
@@ -37,13 +42,13 @@ def _reader(pfad: Path):
 
 def _titel(reader, seitentexte: list[str], pfad: Path) -> str:
     """Titel aus Metadaten, sonst erste sinnvolle Zeile, sonst Dateiname."""
-    with_meta = None
+    aus_meta = None
     try:
-        with_meta = (reader.metadata or {}).get("/Title")
+        aus_meta = (reader.metadata or {}).get("/Title")
     except Exception:
         pass
-    if with_meta:
-        kandidat = str(with_meta).strip()
+    if aus_meta:
+        kandidat = str(aus_meta).strip()
         if len(kandidat) > 3 and not _GENERISCH.match(kandidat):
             return kandidat
     if seitentexte:
@@ -59,12 +64,12 @@ def lade_pdf(
     ablage: Ablage,
     pfad: Path,
     *,
-    kurs: str,
-    lektion: int | None = None,
+    praefix: str,
+    kurs: str | None = None,
+    lektion: str | None = None,
     titel: str | None = None,
-    tags: list[str] | None = None,
-) -> tuple[Path, dict]:
-    """Liest ein PDF aus und legt Text plus Original ab."""
+) -> tuple[Path, dict, bool]:
+    """Liest ein PDF aus und legt Text plus Original im Eingang ab."""
     pfad = Path(pfad).expanduser().resolve()
     if not pfad.is_file():
         raise PdfFehler(f"{pfad} ist keine Datei.")
@@ -77,25 +82,37 @@ def lade_pdf(
         except Exception as exc:
             seitentexte.append(f"_(Seite nicht lesbar: {exc})_")
 
-    zeichen = sum(len(t) for t in seitentexte)
-    braucht_ocr = bool(seitentexte) and zeichen / len(seitentexte) < MIN_ZEICHEN_PRO_SEITE
-
-    meta = schema.neues_frontmatter(
-        id=f"pdf:{schema.datei_hash(pfad)}",
-        typ="pdf",
-        titel=titel or _titel(reader, seitentexte, pfad),
-        quelle=pfad.name,
-        kurs=schema.slugify(kurs),
-        lektion=lektion,
-        seiten=len(seitentexte),
-        tags=tags or [],
+    leere = sum(1 for t in seitentexte if len(t) < MIN_ZEICHEN_PRO_SEITE)
+    braucht_ocr = (
+        bool(seitentexte) and leere / len(seitentexte) >= MAX_LEERE_SEITEN
     )
-    meta["original"] = ablage.kopiere_original(pfad, meta)
-    if braucht_ocr:
-        meta["braucht_ocr"] = True
 
-    teile = [f"# {meta['titel']}", "", f"Originaldatei: `{pfad.name}`",
-             f"Seiten: {len(seitentexte)}", ""]
+    echter_titel = titel or _titel(reader, seitentexte, pfad)
+    kennung = schema.slugify(echter_titel, 50)
+    ziel = ablage.eingang_pfad(praefix, kennung)
+
+    original = ablage.kopiere_original(
+        pfad, ablage.media_ordner(kennung) / pfad.name
+    )
+
+    felder = {
+        "Titel": echter_titel,
+        "Kurs": kurs,
+        "Lektion": lektion,
+        "Datei": pfad.name,
+        "Erfassungsdatum": schema.heute(),
+        "Abdeckung": (
+            f"PDF-Text, {len(seitentexte)} "
+            f"{'Seite' if len(seitentexte) == 1 else 'Seiten'}"
+            + (
+                f" — {leere} davon ohne Text, OCR nötig" if braucht_ocr
+                else f" ({leere} ohne Text)" if leere else ""
+            )
+        ),
+        "Original": ablage.rel(original),
+    }
+
+    teile = []
     if braucht_ocr:
         teile += [
             "> **Kein Textlayer.** Das PDF ist wahrscheinlich ein Scan. Mit OCR",
@@ -103,12 +120,11 @@ def lade_pdf(
             "> `ocrmypdf -l deu --skip-text alt.pdf neu.pdf`",
             "",
         ]
-    teile += ["## Inhalt", ""]
     for nr, text in enumerate(seitentexte, start=1):
         teile += [f"[Seite {nr}]", "", text or "_(leer)_", ""]
 
-    ziel = ablage.schreibe(meta, "\n".join(teile))
-    return ziel, meta
+    ablage.schreibe(felder, "\n".join(teile), ziel)
+    return ziel, felder, braucht_ocr
 
 
 def lade_ordner(
@@ -116,13 +132,12 @@ def lade_ordner(
     ablage: Ablage,
     ordner: Path,
     *,
-    kurs: str,
-    tags: list[str] | None = None,
-    nummerieren: bool = True,
-) -> list[tuple[Path, dict]]:
+    praefix: str,
+    kurs: str | None = None,
+) -> list[tuple[Path, dict, bool]]:
     """Liest alle PDFs eines Ordners in alphabetischer Reihenfolge ein.
 
-    Die Reihenfolge wird als Lektionsnummer festgehalten -- bei Dateinamen wie
+    Die Position wird als Lektionsnummer festgehalten -- bei Dateinamen wie
     `01 Einfuehrung.pdf` ergibt das direkt die richtige Kursgliederung.
     """
     ordner = Path(ordner).expanduser().resolve()
@@ -133,14 +148,14 @@ def lade_ordner(
     if not dateien:
         raise PdfFehler(f"In {ordner} liegen keine PDF-Dateien.")
 
-    ergebnisse: list[tuple[Path, dict]] = []
+    ergebnisse: list[tuple[Path, dict, bool]] = []
     for nr, datei in enumerate(dateien, start=1):
         print(f"[{nr}/{len(dateien)}] {datei.name}")
         try:
             ergebnisse.append(
                 lade_pdf(
-                    cfg, ablage, datei, kurs=kurs,
-                    lektion=nr if nummerieren else None, tags=tags,
+                    cfg, ablage, datei, praefix=praefix, kurs=kurs,
+                    lektion=str(nr),
                 )
             )
         except Exception as exc:

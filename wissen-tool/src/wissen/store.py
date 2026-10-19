@@ -1,123 +1,81 @@
-"""Die Ablage: Ordnerstruktur, Schreiben, Index.
+"""Die Ablage -- schreibt in den vorhandenen `buch/`-Ordner.
 
-Aufbau der Wissensbasis:
+Das Werkzeug legt keine eigene Struktur an. Es bedient die Stellen, die
+ANLEITUNG.md schon vorsieht:
 
-    raw/youtube/<video-id>--<slug>.md     Transkripte, unveraendert
-    raw/kurse/<kurs>/<nn>--<slug>.md      Seitentext + Kurstranskripte
-    raw/pdf/<kurs>/<nn>--<slug>.md        PDF-Text (+ Original daneben)
-    assets/<quellen-id>/...               Screenshots und Seitenbilder
-    compendia/<kurs>.md                   die generierten Kompendien
-    INDEX.md                              Einstiegspunkt, maschinell erzeugt
+    eingang/                      Sammelstelle, noch nicht eingearbeitet
+    eingang/<praefix>_<id>.md     Rohtranskript (Ablauf C Schritt 2)
+    eingang/media/<id>/           Screenshots zu offenen Fragen (Regel 5)
+    eingang/verarbeitet/          nach dem Einarbeiten (Ablauf C Schritt 6)
 
-Trennung ist Absicht: `raw/` wird nie ueberschrieben, `compendia/` kann
-jederzeit neu erzeugt werden, ohne erneut auszulesen.
+Alles darueber -- Kursdetaildateien, Teil I-V, Konzeptregister, quellen.md --
+bleibt Handarbeit nach ANLEITUNG.md. Das Werkzeug schreibt dort nicht hinein.
 """
 
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 from typing import Iterator
 
 from . import schema
 
-ROH_ORDNER = {"youtube": "raw/youtube", "kurs": "raw/kurse", "pdf": "raw/pdf"}
-
-_BASIS_README = """# Wissensbasis
-
-Zentrale Ablage fuer ausgelesene Lerninhalte. Erzeugt und gepflegt mit dem
-Werkzeug `wissen` (siehe InfProjects/wissen-tool).
-
-## Wie diese Ablage zu lesen ist
-
-| Ordner | Inhalt |
-| --- | --- |
-| `raw/youtube/` | Transkripte von YouTube-Tutorials, mit Zeitmarken `[mm:ss]` |
-| `raw/kurse/` | Seitentext und Transkripte aus Online-Kursen, pro Kurs ein Ordner |
-| `raw/pdf/` | Text aus PDF-Kursen und Trainingseinheiten, Seitenmarken `[Seite n]`, Original liegt daneben |
-| `assets/` | Screenshots, pro Quelle ein Ordner; Dateiname ist der Zeitpunkt im Video |
-| `compendia/` | die ausgearbeiteten Kompendien -- abgeleitet, jederzeit neu erzeugbar |
-
-`raw/` ist Rohmaterial und wird nicht von Hand bearbeitet. Wer etwas
-korrigieren will, korrigiert es im Kompendium.
-
-Jede Datei beginnt mit einem YAML-Frontmatter (`id`, `typ`, `titel`, `quelle`,
-`kurs`, `lektion`, `tags`, `assets`). Alle Pfade darin sind relativ zu diesem
-Ordner. `INDEX.md` wird daraus erzeugt -- dort anfangen, nicht alle Dateien lesen.
-
-## Einstieg
-
-1. `INDEX.md` lesen, um Bestand und Struktur zu sehen.
-2. Fuer eine inhaltliche Frage zuerst in `compendia/` nachsehen.
-3. Nur wenn es auf den Wortlaut ankommt (Zitat, Zeitpunkt, Codebeispiel),
-   in die zugehoerige Datei unter `raw/` gehen -- das Kompendium nennt sie.
-
-Zum Schreiben und Fortschreiben der Kompendien liegt eine Anleitung unter
-`.claude/skills/kompendium/SKILL.md`.
-
-Die Inhalte sind gespeicherte Kopien fuer persoenliche Lernzwecke.
-"""
-
 
 class Ablage:
-    """Zugriff auf die Wissensbasis."""
+    """Zugriff auf den `buch/`-Ordner."""
 
     def __init__(self, root: Path):
         self.root = Path(root).expanduser().resolve()
 
+    @property
+    def eingang(self) -> Path:
+        return self.root / "eingang"
+
+    @property
+    def verarbeitet(self) -> Path:
+        return self.eingang / "verarbeitet"
+
+    @property
+    def media(self) -> Path:
+        return self.eingang / "media"
+
     # -- Einrichtung -----------------------------------------------------
 
     def init(self) -> list[Path]:
-        """Legt die Ordnerstruktur an. Vorhandenes bleibt unberuehrt."""
+        """Legt nur die Eingangsordner an, falls sie fehlen."""
         angelegt: list[Path] = []
-        skill = self.root / ".claude" / "skills" / "kompendium" / "SKILL.md"
-        if not skill.exists():
-            skill.parent.mkdir(parents=True, exist_ok=True)
-            skill.write_text(_skill_vorlage(), encoding="utf-8")
-            angelegt.append(skill)
-        for rel in ["raw/youtube", "raw/kurse", "raw/pdf", "assets", "compendia", "inbox"]:
-            pfad = self.root / rel
+        for pfad in (self.eingang, self.verarbeitet, self.media):
             if not pfad.exists():
                 pfad.mkdir(parents=True)
-                (pfad / ".gitkeep").touch()
                 angelegt.append(pfad)
-        readme = self.root / "README.md"
-        if not readme.exists():
-            readme.write_text(_BASIS_README, encoding="utf-8")
-            angelegt.append(readme)
-        gitignore = self.root / ".gitignore"
-        if not gitignore.exists():
-            gitignore.write_text(
-                "# Ablagefach fuer noch nicht einsortierte Dateien\n"
-                "inbox/*\n!inbox/.gitkeep\n\n.DS_Store\n",
-                encoding="utf-8",
-            )
-            angelegt.append(gitignore)
         return angelegt
 
     def pruefe(self) -> None:
         if not self.root.is_dir():
             raise FileNotFoundError(
-                f"Ablage {self.root} existiert nicht. Erst 'wissen init' ausfuehren."
+                f"Ablage {self.root} existiert nicht. In wissen.toml unter "
+                "[ablage] pfad den buch/-Ordner eintragen."
             )
+        self.init()
+
+    def warnungen(self) -> list[str]:
+        """Hinweise, wenn die Ablage nicht nach dem buch/-Ordner aussieht."""
+        meldungen = []
+        if not (self.root / "ANLEITUNG.md").is_file():
+            meldungen.append(
+                f"In {self.root} liegt keine ANLEITUNG.md -- ist das wirklich "
+                "der buch/-Ordner?"
+            )
+        return meldungen
 
     # -- Pfade -----------------------------------------------------------
 
-    def dokument_pfad(self, meta: dict) -> Path:
-        typ = meta["typ"]
-        ordner = self.root / ROH_ORDNER[typ]
-        slug = schema.slugify(meta.get("titel") or meta["id"])
-        if typ == "youtube":
-            kennung = str(meta["id"]).split(":", 1)[-1]
-            return ordner / f"{kennung}--{slug}.md"
-        kurs = schema.slugify(meta.get("kurs") or "ohne-kurs")
-        lektion = meta.get("lektion")
-        praefix = f"{int(lektion):02d}--" if lektion is not None else ""
-        return ordner / kurs / f"{praefix}{slug}.md"
+    def eingang_pfad(self, praefix: str, kennung: str) -> Path:
+        """`eingang/<praefix>_<kennung>.md`, wie in ANLEITUNG.md Ablauf C."""
+        return self.eingang / f"{schema.slugify(praefix, 40)}_{kennung}.md"
 
-    def asset_ordner(self, quellen_id: str) -> Path:
-        ordner = self.root / "assets" / schema.slugify(quellen_id)
+    def media_ordner(self, kennung: str) -> Path:
+        ordner = self.media / schema.slugify(kennung, 40)
         ordner.mkdir(parents=True, exist_ok=True)
         return ordner
 
@@ -127,145 +85,88 @@ class Ablage:
 
     def rel_von(self, ziel: Path, quelle: Path) -> str:
         """Pfad von `quelle` (Datei) aus zu `ziel` -- fuer Markdown-Links."""
+        import os
+
         return Path(
             os.path.relpath(Path(ziel).resolve(), Path(quelle).resolve().parent)
         ).as_posix()
 
     # -- Lesen und Schreiben ---------------------------------------------
 
-    def schreibe(self, meta: dict, body: str, pfad: Path | None = None) -> Path:
-        pfad = pfad or self.dokument_pfad(meta)
+    def schreibe(self, felder: dict, body: str, pfad: Path) -> Path:
         pfad.parent.mkdir(parents=True, exist_ok=True)
-        pfad.write_text(schema.dokument(meta, body), encoding="utf-8")
+        pfad.write_text(schema.dokument(felder, body), encoding="utf-8")
         return pfad
 
-    def finde_nach_id(self, quellen_id: str) -> Path | None:
-        for pfad, meta, _ in self.dokumente():
-            if meta.get("id") == quellen_id:
+    def kopiere_original(self, quelle: Path, ziel: Path) -> Path:
+        ziel.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(quelle, ziel)
+        return ziel
+
+    def dokumente(self, auch_verarbeitet: bool = False) -> Iterator[tuple[Path, dict]]:
+        """Rohmaterialdateien im Eingang, mit gelesenem Kopf."""
+        ordner = [self.eingang]
+        if auch_verarbeitet:
+            ordner.append(self.verarbeitet)
+        for basis in ordner:
+            if not basis.is_dir():
+                continue
+            for pfad in sorted(basis.glob("*.md")):
+                felder = schema.kopf_lesen(pfad.read_text(encoding="utf-8"))
+                yield pfad, felder
+
+    def finde_nach_url(self, url: str) -> Path | None:
+        for pfad, felder in self.dokumente(auch_verarbeitet=True):
+            if (felder.get("URL") or "").strip().rstrip("/") == url.strip().rstrip("/"):
                 return pfad
         return None
 
-    def dokumente(self) -> Iterator[tuple[Path, dict, str]]:
-        """Alle Rohdokumente mit Frontmatter und Fliesstext."""
-        for pfad in sorted((self.root / "raw").rglob("*.md")):
-            text = pfad.read_text(encoding="utf-8")
-            meta, body = schema.frontmatter_load(text)
-            if meta:
-                yield pfad, meta, body
-
-    def kopiere_original(self, quelle: Path, meta: dict) -> str:
-        """Legt eine Originaldatei (z.B. das PDF) neben ihr Dokument."""
-        ziel = self.dokument_pfad(meta).with_suffix(Path(quelle).suffix.lower())
-        ziel.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(quelle, ziel)
-        return self.rel(ziel)
-
-    # -- Index -----------------------------------------------------------
-
-    def baue_index(self) -> Path:
-        """Erzeugt INDEX.md neu aus den Frontmattern."""
-        nach_typ: dict[str, list[tuple[Path, dict]]] = {}
-        for pfad, meta, _ in self.dokumente():
-            nach_typ.setdefault(meta.get("typ") or "sonstiges", []).append((pfad, meta))
-
-        zeilen = [
-            "# Index der Wissensbasis",
-            "",
-            "Maschinell erzeugt mit `wissen index` -- nicht von Hand bearbeiten.",
-            "",
-        ]
-        gesamt = sum(len(v) for v in nach_typ.values())
-        kompendien = sorted((self.root / "compendia").glob("*.md"))
-        zeilen.append(
-            f"{_anzahl(gesamt, 'Quelle', 'Quellen')}, "
-            f"{_anzahl(len(kompendien), 'Kompendium', 'Kompendien')}, "
-            f"Stand {schema.heute()}."
-        )
-        zeilen.append("")
-
-        if kompendien:
-            zeilen += ["## Kompendien", ""]
-            for pfad in kompendien:
-                meta, _ = schema.frontmatter_load(pfad.read_text(encoding="utf-8"))
-                titel = meta.get("titel") or pfad.stem
-                zeilen.append(f"- [{titel}]({self.rel(pfad)})")
-            zeilen.append("")
-
-        if "youtube" in nach_typ:
-            zeilen += ["## YouTube-Tutorials", ""]
-            for pfad, meta in sorted(nach_typ["youtube"], key=_sortierschluessel):
-                zeilen.append(f"- {_eintrag(self, pfad, meta)}")
-            zeilen.append("")
-
-        for typ, titel in (("kurs", "Online-Kurse"), ("pdf", "PDF-Kurse und Trainingseinheiten")):
-            if typ not in nach_typ:
-                continue
-            zeilen += [f"## {titel}", ""]
-            nach_kurs: dict[str, list[tuple[Path, dict]]] = {}
-            for pfad, meta in nach_typ[typ]:
-                nach_kurs.setdefault(meta.get("kurs") or "ohne-kurs", []).append((pfad, meta))
-            for kurs in sorted(nach_kurs):
-                zeilen += [f"### {kurs}", ""]
-                for pfad, meta in sorted(nach_kurs[kurs], key=_sortierschluessel):
-                    zeilen.append(f"- {_eintrag(self, pfad, meta)}")
-                zeilen.append("")
-
-        ziel = self.root / "INDEX.md"
-        ziel.write_text("\n".join(zeilen).rstrip() + "\n", encoding="utf-8")
+    def verschiebe_verarbeitet(self, pfad: Path) -> Path:
+        """Ablauf C Schritt 6: Eingangsdatei nach `eingang/verarbeitet/`."""
+        pfad = Path(pfad).resolve()
+        if pfad.parent == self.verarbeitet:
+            return pfad
+        if pfad.parent != self.eingang:
+            raise ValueError(f"{pfad} liegt nicht in {self.eingang}.")
+        self.verarbeitet.mkdir(parents=True, exist_ok=True)
+        ziel = self.verarbeitet / pfad.name
+        if ziel.exists():
+            raise FileExistsError(f"{self.rel(ziel)} gibt es schon.")
+        # Die Datei rutscht eine Ebene tiefer -- relative Bildlinks mitziehen,
+        # sonst zeigen die Screenshots ins Leere.
+        text = pfad.read_text(encoding="utf-8")
+        gezogen = text.replace("](media/", "](../media/")
+        pfad.rename(ziel)
+        if gezogen != text:
+            ziel.write_text(gezogen, encoding="utf-8")
         return ziel
 
+    # -- quellen.md ------------------------------------------------------
 
-def _skill_vorlage() -> str:
-    """Die Kompendium-Skill, die mit der Wissensbasis mitwandert.
+    def quellen_eintrag(self, pfad: Path, felder: dict) -> str:
+        """Entwurf fuer den Eintrag unter „Einzelquellen" in `quellen.md`.
 
-    Sie liegt in der Wissensbasis und nicht im Werkzeug, damit Claude sie
-    dort findet, wo die Kompendien entstehen.
-    """
-    from importlib import resources
-
-    return (
-        resources.files("wissen.vorlagen")
-        .joinpath("kompendium-skill.md")
-        .read_text(encoding="utf-8")
-    )
-
-
-def _anzahl(wert: int, einzahl: str, mehrzahl: str) -> str:
-    return f"{wert} {einzahl if wert == 1 else mehrzahl}"
-
-
-def _sortierschluessel(paar: tuple[Path, dict]):
-    pfad, meta = paar
-    lektion = meta.get("lektion")
-    return (0, int(lektion)) if lektion is not None else (1, 0), pfad.name
-
-
-def _eintrag(ablage: Ablage, pfad: Path, meta: dict) -> str:
-    titel = meta.get("titel") or pfad.stem
-    teile = [f"[{titel}]({ablage.rel(pfad)})"]
-    zusatz = []
-    if meta.get("lektion") is not None:
-        zusatz.append(f"Lektion {meta['lektion']}")
-    if meta.get("dauer"):
-        zusatz.append(f"Dauer {schema.sekunden_zu_zeit(meta['dauer'])}")
-    if meta.get("seiten"):
-        zusatz.append(_anzahl(meta["seiten"], "Seite", "Seiten"))
-    if meta.get("assets"):
-        zusatz.append(_anzahl(len(meta["assets"]), "Screenshot", "Screenshots"))
-    if meta.get("braucht_ocr"):
-        zusatz.append("**OCR nötig**")
-    if meta.get("abgerufen"):
-        zusatz.append(f"abgerufen {meta['abgerufen']}")
-    if zusatz:
-        teile.append("-- " + ", ".join(zusatz))
-
-    # Bei PDFs ist `quelle` nur ein Dateiname -- dann auf das mitgelegte
-    # Original verlinken statt einen toten Link zu bauen.
-    quelle = meta.get("quelle") or ""
-    if quelle.startswith(("http://", "https://")):
-        teile.append(f"([Quelle]({quelle}))")
-    elif meta.get("original"):
-        teile.append(f"([Original]({meta['original']}))")
-    elif quelle:
-        teile.append(f"(aus `{quelle}`)")
-    return " ".join(teile)
+        Nur ein Vorschlag zum Hineinkopieren -- `quellen.md` selbst wird vom
+        Werkzeug nicht angefasst.
+        """
+        teile = [f"- „{felder.get('Titel', 'Ohne Titel')}“"]
+        kopf = []
+        if felder.get("Kanal"):
+            kopf.append(felder["Kanal"])
+        quelle = (felder.get("URL") or "").strip()
+        if quelle.startswith(("http://", "https://")):
+            kopf.append(f"<{quelle}>")
+        elif felder.get("Datei"):
+            # Bei PDFs gibt es keine URL, nur einen Dateinamen -- nicht als
+            # Link ausgeben, sonst entsteht ein toter Verweis.
+            kopf.append(f"Datei `{felder['Datei']}`")
+        if felder.get("Veröffentlicht"):
+            kopf.append(f"veröffentlicht {felder['Veröffentlicht']}")
+        if kopf:
+            teile.append(" — " + ", ".join(kopf))
+        abdeckung = (felder.get("Abdeckung") or "").strip()
+        if abdeckung:
+            teile.append(f", {abdeckung}")
+        bezeichnung = "Rohtranskript" if abdeckung.startswith("Transkript") else "Rohtext"
+        teile.append(f"; {bezeichnung}: `{self.rel(pfad)}`")
+        return "".join(teile)

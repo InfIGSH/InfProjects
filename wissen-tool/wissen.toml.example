@@ -1,32 +1,44 @@
-# Konfiguration fuer das Werkzeug `wissen`.
+# Konfiguration für das Werkzeug `wissen`.
 # Kopieren nach ~/.config/wissen/wissen.toml (oder ./wissen.toml) und anpassen.
 
 [ablage]
-# Das separate Git-Repository, in dem das Wissen landet.
-pfad = "~/Wissensbasis"
+# Der vorhandene buch/-Ordner des Projekts "Ultimate Production Helper".
+# Das Werkzeug schreibt ausschließlich in buch/eingang/ -- Kursdateien,
+# Teil I-V, quellen.md und konzeptregister.md werden nie angefasst.
+pfad = "~/Ultimate Production Helper/buch"
 
 [browser]
-# Hier behaelt Chromium die Anmeldungen der Kursportale.
+# Hier behält Chromium die Anmeldungen der Kursportale.
 # Nicht ins Git-Repo legen -- darin stehen aktive Sitzungs-Cookies.
 profil = "~/.local/share/wissen/browser-profil"
 
 [youtube]
 # Untertitelsprachen in Wunschreihenfolge. Von Hand erstellte Untertitel
-# gewinnen immer gegen automatische, unabhaengig von dieser Liste.
-sprachen = ["de", "de-DE", "en", "en-US"]
+# gewinnen immer gegen automatische, unabhängig von dieser Liste.
+sprachen = ["en", "en-US", "de", "de-DE"]
 # Abstand der Zeitmarken im Transkript, in Sekunden.
 marke_alle = 30
+# Ab dieser Lücke zum Videoende gilt das Transkript als unvollständig
+# (ANLEITUNG.md, Ablauf C Schritt 1: "bis ca. 1 Minute an die Videolänge").
+max_luecke = 60
 
 [web]
 # Wartezeit nach dem Laden, damit nachgeladene Inhalte da sind (Millisekunden).
 warte_ms = 1500
 
-# Pro Kursportal lassen sich Selektoren hinterlegen. Ohne Eintrag arbeitet das
-# Werkzeug mit Heuristiken -- das klappt oft, aber nicht immer. Wenn ein
-# Transkript nicht gefunden wird: im Browser das Panel mit Rechtsklick ->
-# "Untersuchen" ansehen und Klasse oder ID hier eintragen.
+# Pro Kursportal lassen sich Selektoren hinterlegen. Ohne Eintrag erkennt das
+# Werkzeug das Transkript selbst (über die Dichte der Zeitmarken, auch in
+# fremden Frames). Findet es nichts, zeigt `wissen inspect <url>` alle
+# Kandidaten und schlägt den passenden Block vor.
 #
-# [hosts."lernplattform.de"]
-# klicks = ["button[data-purpose='transcript-toggle']"]
-# transkript = ["[data-purpose='transcript-panel']"]
-# inhalt = ["div.lesson-body"]
+# WICHTIG zu `klicks`: Geklickt wird ausschließlich, was hier steht -- das
+# Werkzeug rät nie selbst. Trotzdem prüft es jeden Treffer gegen eine
+# Sperrliste (complete, mark as, abgeschlossen, weiter, submit ...) und
+# verweigert den Klick, falls der Knopf nach Fortschritt aussieht.
+# ANLEITUNG.md: "keine Fortschritts-/'Mark as done'-Buttons anklicken".
+#
+# [hosts."campus.thinkspace.ac.uk"]
+# plattform = "Thinkspace Education"
+# klicks = ["button[aria-label='Transcript']"]
+# transkript = ["#transcript-panel"]
+# inhalt = ["div.lesson-content"]
