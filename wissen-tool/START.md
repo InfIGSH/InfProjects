@@ -25,16 +25,33 @@ in den Ordner `wissen-tool` wechseln.
 bash setup.sh
 ```
 
-**Windows** (PowerShell)
+**Windows** — die beiden Konsolen haben unterschiedliche Syntax. Woran du
+erkennst, in welcher du bist: die Eingabeaufforderung zeigt
+`C:\Users\...>`, PowerShell zeigt `PS C:\Users\...>`.
+
+PowerShell:
 
 ```powershell
-python -m venv .venv
+py -3 -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 playwright install chromium
 mkdir "$env:USERPROFILE\.config\wissen" -Force
 copy wissen.toml.example "$env:USERPROFILE\.config\wissen\wissen.toml"
 ```
+
+Eingabeaufforderung (cmd):
+
+```cmd
+py -3 -m venv .venv
+.venv\Scripts\activate.bat
+pip install -e ".[dev]"
+playwright install chromium
+mkdir "%USERPROFILE%\.config\wissen"
+copy wissen.toml.example "%USERPROFILE%\.config\wissen\wissen.toml"
+```
+
+Wird `py` nicht gefunden: `python` statt `py -3`.
 
 Zusätzlich **ffmpeg** (nur für Screenshots aus Videos nötig, sonst
 überspringen):
@@ -57,6 +74,14 @@ pfad = "~/Ultimate Production Helper/buch"
 Das ist die einzige Pflichtangabe. Alles andere in der Datei hat brauchbare
 Vorgaben.
 
+Unter Windows mit Schrägstrichen oder doppelten Backslashes schreiben — ein
+einfacher Backslash gilt in TOML als Escape-Zeichen und macht die Datei
+unlesbar:
+
+```toml
+pfad = "C:/Users/Rene/Ultimate Production Helper/buch"
+```
+
 ## 3. Loslegen
 
 ```bash
@@ -77,6 +102,18 @@ alias wissen="$HOME/InfProjects/wissen-tool/.venv/bin/wissen"
 ```
 
 Danach geht `wissen ...` aus jedem Ordner, ohne Aktivieren.
+
+Unter Windows geht dasselbe über den vollen Pfad zum Programm:
+
+```cmd
+%USERPROFILE%\InfProjects\wissen-tool\.venv\Scripts\wissen.exe eingang
+```
+
+Oder in PowerShell einmalig als Funktion ins Profil (`notepad $PROFILE`):
+
+```powershell
+function wissen { & "$env:USERPROFILE\InfProjects\wissen-tool\.venv\Scripts\wissen.exe" @args }
+```
 
 ## 4. Erster Test: ein Video, das du schon kennst
 
