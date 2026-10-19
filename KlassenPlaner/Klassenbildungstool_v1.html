@@ -113,7 +113,6 @@ details:not(.group-details)[open]>summary::before{content:'▼'}
 @keyframes highlight-pulse{0%,100%{box-shadow:0 0 0 3px rgba(220,38,38,.4)}50%{box-shadow:0 0 0 6px rgba(220,38,38,.1)}}
 .scroll-highlight{animation:highlight-pulse 1s ease 3}
 </style>
-</style>
 
 <!-- Kein externer Solver erforderlich – reiner JS-Solver eingebettet -->
 </head>
@@ -162,6 +161,12 @@ details:not(.group-details)[open]>summary::before{content:'▼'}
               title="Alle Personen-, Klassen- und Tutordaten als JSON speichern">JSON-Export</button>
       <button class="btn" id="fullImportBtn" style="background:#8e44ad"
               title="Vollexport-JSON laden und Zustand vollständig wiederherstellen">JSON-Import</button>
+      <div style="font-size:.72rem;color:#6c3483;margin-top:.4rem;line-height:1.45">
+        Der Zwischenstand liegt im Browser dieses Rechners (Autosave).
+        Für die Übergabe an einen anderen Arbeitsplatz den JSON-Export nutzen.
+      </div>
+      <button class="btn" id="clearDataBtn" style="background:#7f8c8d;margin-top:.35rem;font-size:.76rem;padding:.28rem .55rem"
+              title="Personen, Klassen und Autosave aus diesem Browser entfernen">&#128465; Sitzungsdaten löschen</button>
     </div>
 
     <!-- Gebildete Klassen CSV (Import + Export, blau) -->
@@ -389,33 +394,35 @@ function detectSeparator(text){
 function sepName(sep){ return sep===';'?'Semikolon':sep===','?'Komma':sep==='\t'?'Tab':sep; }
 
 /* ── CSV parsen mit konfigurierbarem Trennzeichen ───────────────────────────── */
+/* Scannt den gesamten Text zeichenweise statt zeilenweise. Dadurch dürfen
+   Felder in Anführungszeichen Zeilenumbrüche enthalten – z.B. eine mehrzeilige
+   Notiz, wie Excel sie bei Alt+Enter schreibt. */
 function csvParse(text, separator){
   const sep=separator||detectSeparator(text).separator;
-  const rows=[];
-  const lines=text.replace(/^\uFEFF/,'').split(/\r?\n/);
-  if(!lines.length) return rows;
-  const parseLine=line=>{
-    const cols=[]; let cur='', inQ=false;
-    for(let i=0;i<line.length;i++){
-      const ch=line[i];
+  const src=text.replace(/^\uFEFF/,'');
+  const rows=[]; let row=[], cur='', inQ=false;
+  for(let i=0;i<src.length;i++){
+    const ch=src[i];
+    if(inQ){
       if(ch==='"'){
-        if(inQ && line[i+1]==='"'){cur+='"';i++;}
-        else inQ=!inQ;
-      }else if(ch===sep && !inQ){cols.push(cur);cur='';}
-      else cur+=ch;
+        if(src[i+1]==='"'){cur+='"';i++;} else inQ=false;
+      } else cur+=ch;
     }
-    cols.push(cur);
-    return cols;
-  };
-  const header=parseLine(lines.shift()).map(h=>h.trim());
-  for(const line of lines){
-    if(!line.trim()) continue;
-    const cols=parseLine(line);
-    const obj={};
-    header.forEach((h,i)=>obj[h]=(cols[i]||'').trim());
-    rows.push(obj);
+    else if(ch==='"') inQ=true;
+    else if(ch===sep){ row.push(cur); cur=''; }
+    else if(ch==='\r'){ /* ignorieren – '\n' beendet die Zeile */ }
+    else if(ch==='\n'){ row.push(cur); rows.push(row); row=[]; cur=''; }
+    else cur+=ch;
   }
-  return rows;
+  if(cur!==''||row.length){ row.push(cur); rows.push(row); }
+  const header=(rows.shift()||[]).map(h=>h.trim());
+  return rows
+    .filter(cols=>cols.some(c=>c.trim()!==''))   /* Leerzeilen überspringen */
+    .map(cols=>{
+      const obj={};
+      header.forEach((h,i)=>obj[h]=(cols[i]||'').trim());
+      return obj;
+    });
 }
 
 /* ── Spalten-Synonyme: Header case-insensitiv + reihenfolgeunabhängig ─────────
@@ -465,11 +472,13 @@ function canonicalizeRow(rawRow){
   return out;
 }
 
+/* Quotet alle Trennzeichen, die in den Exporten vorkommen. Das Semikolon MUSS
+   dabei sein: die Klassen-Exporte sind semikolongetrennt, eine Notiz wie
+   „Mutter angerufen; bitte beachten" hat sonst die Spalten verschoben. */
 function csvEscape(v){
   if(v==null) return '';
   const s=String(v);
-  return (s.includes(',')||s.includes('"')||s.includes('\n'))
-    ? `"${s.replace(/"/g,'""')}"` : s;
+  return /[;,"\n\r\t]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
 }
 
 function downloadCSV(content,filename){
@@ -482,6 +491,21 @@ function downloadCSV(content,filename){
 
 function ceilDiv(a,b){ return Math.ceil(a/b); }
 function floorDiv(a,b){ return Math.floor(a/b); }
+
+/* Nächste freie Personen-ID. NICHT persons.length verwenden: nach dem Löschen
+   einer Person ist die Länge kleiner als die höchste vergebene ID, die neue
+   Person bekäme eine bereits belegte ID und persons.find() liefert ab dann die
+   falsche Person (Karten, Gruppen und Exporte laufen auseinander). */
+function nextPersonId(){
+  return persons.reduce((m,p)=>Math.max(m,p.id),-1)+1;
+}
+
+/* Datum als YYYY-MM-DD für Dateinamen */
+function isoDate(d){
+  const x=d||new Date();
+  const p=n=>String(n).padStart(2,'0');
+  return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}`;
+}
 
 /* ── 1.2: Display name helper ───────────────────────────────────────────── */
 function displayName(p){
@@ -563,21 +587,52 @@ function doSwapKlassen(){
   groups[a].forEach(pid=>{ const p=persons.find(x=>x.id===pid); if(p) p.group=a; });
   groups[b].forEach(pid=>{ const p=persons.find(x=>x.id===pid); if(p) p.group=b; });
   [tutors[a],tutors[b]]=[tutors[b],tutors[a]];
-  renderGroups(); updateStats(); renderZuteilung(); initTutorInputs();
+  renderGroups(); updateStats(); renderZuteilung();
   const m=document.getElementById('zuteilungMsg');
   if(m) m.innerHTML=`<span class="info">✔ ${klasseName(a)} ↔ ${klasseName(b)} getauscht (Schüler/innen + Tutoren).</span>`;
 }
 
-/* ── Ausschluss-Verletzungen in Statistik ────────────────────────────────── */
+/* ═══ Ausschluss (NICHTINEIN) – EINE Quelle der Wahrheit ═══════════════════
+   Vorher gab es fünf Implementierungen in drei Semantiken (exakter Vollname im
+   Solver, Preflight, auf der Karte und in der Statistik; Fuzzy-Matching in der
+   roten Box). Dadurch sah der Solver Konflikte nicht, die die Oberfläche
+   anzeigte. Jetzt benutzen alle Stellen die folgenden drei Funktionen – und
+   damit dieselbe Namenssuche wie die Wünsche.
+   Ein Feld darf mehrere Namen enthalten, getrennt durch , ; / & oder „und". */
+function exclusionNamesOf(p){
+  return (p.nichtinein||'').split(/[,;/&]|\bund\b/i).map(s=>s.trim()).filter(Boolean);
+}
+function getExclusionPartners(p){
+  const out=[];
+  for(const n of exclusionNamesOf(p)){
+    const t=matchPersonByName(n);
+    if(t&&t.id!==p.id&&!out.includes(t)) out.push(t);
+  }
+  return out;
+}
+/* Alle Ausschlusspaare als kanonische Keys "kleinereId_groessereId" */
+function exclusionPairKeys(){
+  const s=new Set();
+  persons.forEach(p=>getExclusionPartners(p).forEach(t=>
+    s.add(`${Math.min(p.id,t.id)}_${Math.max(p.id,t.id)}`)));
+  return s;
+}
+/* Liegt eine Ausschlussperson von p in Klasse g? (für Drop/Platzierung) */
+function exclusionConflictInGroup(p, g, ignoreId){
+  return getExclusionPartners(p)
+    .filter(t=>t.id!==ignoreId&&t.group===g);
+}
+
 function getExclusionViolations(){
   const viols=[]; const seen=new Set();
   persons.forEach(p=>{
-    if(!p.nichtinein||p.group===null) return;
-    const t=matchPersonByName(p.nichtinein);
-    if(!t||t.group!==p.group) return;
-    const key=`${Math.min(p.id,t.id)}_${Math.max(p.id,t.id)}`;
-    if(seen.has(key)) return;
-    seen.add(key); viols.push({a:p,b:t});
+    if(p.group===null) return;
+    getExclusionPartners(p).forEach(t=>{
+      if(t.group!==p.group) return;
+      const key=`${Math.min(p.id,t.id)}_${Math.max(p.id,t.id)}`;
+      if(seen.has(key)) return;
+      seen.add(key); viols.push({a:p,b:t});
+    });
   });
   return viols;
 }
@@ -687,14 +742,14 @@ function wishBadge(wishText, personGroup){
 
 /* ── 1.6: NICHTINEIN warning (klickbar → zur Person scrollen) ───────────── */
 function nichtineinWarning(p){
-  if(!p.nichtinein||p.group===null) return '';
-  const norm=p.nichtinein.toLowerCase().trim();
-  const t=persons.find(q=>displayName(q).toLowerCase()===norm);
-  if(!t||t.group!==p.group) return '';
+  if(p.group===null) return '';
+  const conflicts=getExclusionPartners(p).filter(t=>t.group===p.group);
+  if(!conflicts.length) return '';
   return `<div style="color:var(--red,#dc2626);font-size:.78rem;font-weight:600;margin-bottom:.2rem">`
         +`⚠ Ausschluss-Konflikt: `
-        +`<button class="ni-link" onclick="scrollToPerson(${t.id})" title="Zur Person springen">`
-        +`${escHtml(p.nichtinein)}</button></div>`;
+        +conflicts.map(t=>`<button class="ni-link" onclick="scrollToPerson(${t.id})" title="Zur Person springen">`
+          +`${escHtml(displayName(t))}</button>`).join(', ')
+        +`</div>`;
 }
 function scrollToPerson(pid){
   const card=document.querySelector(`.person[data-id="${pid}"]`);
@@ -781,7 +836,7 @@ function renderGroups(){
       const p=persons.find(x=>x.id===pid); if(!p) return;
       const card=document.createElement('div');
       card.className='person'+(p.locked?' locked':'');
-      card.draggable=true;
+      card.draggable=!p.locked;   /* Fixierte sind nicht ziehbar */
       card.dataset.id=p.id;
 
       const hasFB=hasFoerder(p);
@@ -868,6 +923,17 @@ function attachClassDropdowns(){
       const newG=+sel.value;
       const p=persons.find(x=>x.id===pid);
       if(!p||p.group===newG) return;
+      /* Fixierte Person: ausdrücklich bestätigen (das Dropdown ist der bewusste
+         Weg, eine Fixierung zu übergehen – im Gegensatz zum Ziehen). */
+      if(p.locked&&!confirm(`„${displayName(p)}" ist fixiert.\n\nTrotzdem nach ${klasseName(newG)} verschieben?`)){
+        sel.value=String(p.group); return;
+      }
+      const konflikt=exclusionConflictInGroup(p,newG,pid);
+      if(konflikt.length&&!confirm(
+          `Ausschluss-Konflikt\n\n„${displayName(p)}" soll laut Daten NICHT zusammen mit `
+          +`${konflikt.map(displayName).join(', ')} in eine Klasse.\n\nTrotzdem verschieben?`)){
+        sel.value=String(p.group); return;
+      }
       if(p.group!==null) groups[p.group]=groups[p.group].filter(id=>id!==pid);
       groups[newG].push(pid);
       p.group=newG;
@@ -878,23 +944,6 @@ function attachClassDropdowns(){
 }
 
 
-function renderTutors(){
-  const tbody=document.querySelector('#tutorTable tbody');
-  if(!tbody) return; /* Panel entfernt – kein Fehler */
-  const SEP='border-top:2px solid #95a5a6';
-  for(let i=0;i<5;i++){
-    for(let j=0;j<3;j++){
-      const t=tutors[i][j];
-      const tr=document.createElement('tr');
-      let cells='';
-      if(j===0) cells=`<td rowspan="3" style="vertical-align:middle;${SEP}">` + klasseName(i) + `</td>`;
-      cells+=`<td style="${j===0?SEP:''}">${t.kürzel||'&mdash;'}</td>`
-            +`<td style="${j===0?SEP:''}">${t.fächer||'&mdash;'}</td>`;
-      tr.innerHTML=cells;
-      tbody.appendChild(tr);
-    }
-  }
-}
 
 function updateStats(){
   const el=document.getElementById('stats');
@@ -937,18 +986,10 @@ function updateStats(){
     return `<tr><td>SV ${v}</td>${counts.map(c=>`<td>${c}</td>`).join('')}</tr>`;
   }).join('');
 
-  /* 5.6: Active NICHTINEIN violations */
-  const nameMapS={};
-  persons.forEach(p=>{ nameMapS[displayName(p).toLowerCase()]=p.id; });
-  let exclViols=0;
-  persons.forEach(p=>{
-    if(!p.nichtinein||p.group===null) return;
-    const jId=nameMapS[p.nichtinein.toLowerCase().trim()];
-    if(jId===undefined) return;
-    const pJ=persons.find(x=>x.id===jId);
-    if(pJ&&pJ.group===p.group) exclViols++;
-  });
-  exclViols=Math.ceil(exclViols/2);
+  /* 5.6: Active NICHTINEIN violations – exakt dieselbe Quelle wie die rote Box
+     darüber. Die frühere Eigenzählung halbierte pauschal (Math.ceil(n/2)) und
+     zählte dadurch einseitig notierte Konflikte falsch. */
+  const exclViols=getExclusionViolations().length;
 
   /* 5.8: AV/SV coverage */
   const rated=persons.filter(p=>p.av||p.sv).length;
@@ -1025,6 +1066,9 @@ function updateStats(){
   renderUnmatchedWishes();
   renderAliasManager();
   renderExclusionViolations();
+  /* Autosave hing allein an renderGroups(). AV/SV-Änderungen lösen aber nur
+     updateStats() aus – sie waren damit nicht gesichert. */
+  scheduleAutoSave();
 }
 
 /* ── Nicht erkannte Wunschnamen – Vorschläge per Präfix-Token-Matching ────── */
@@ -1235,11 +1279,30 @@ function showHelp(){
 
       <h3 style="font-size:.85rem;margin:1rem 0 .3rem;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.04em">Tipps</h3>
       <ul style="font-size:.85rem;line-height:1.8;padding-left:1.3rem;margin:0">
-        <li>„Fixieren" sperrt eine Person in ihrer Klasse (Schloss-Symbol)</li>
+        <li>„Fixieren" sperrt eine Person in ihrer Klasse (Schloss-Symbol). Fixierte
+            Karten lassen sich <strong>nicht ziehen</strong> – zum Verschieben erst
+            entsperren oder das Klassen-Dropdown auf der Karte nutzen</li>
+        <li>„Struktur optimieren" verteilt <strong>alle nicht fixierten</strong>
+            Schüler/innen neu – vorher fragt das Tool nach</li>
         <li>Drag &amp; Drop im Zuteilungs-Tab – volle Breite, alle Klassen nebeneinander</li>
-        <li>Ausschluss-Konflikt (⚠) ist klickbar → scrollt zur betroffenen Person</li>
+        <li>Ausschluss-Konflikt (⚠) ist klickbar → scrollt zur betroffenen Person.
+            Ein Ausschlussfeld darf mehrere Namen enthalten (durch Komma getrennt)</li>
         <li>Sitzung wird <strong>automatisch im Browser gespeichert</strong> – erscheint als Banner beim nächsten Öffnen</li>
-        <li>Vollexport/Vollimport für dauerhafte JSON-Sicherung</li>
+      </ul>
+
+      <h3 style="font-size:.85rem;margin:1rem 0 .3rem;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.04em">Daten &amp; Speicherort</h3>
+      <ul style="font-size:.85rem;line-height:1.8;padding-left:1.3rem;margin:0">
+        <li>Der Zwischenstand liegt <strong>nur im Browser dieses Rechners</strong>
+            (lokaler Speicher, Schlüssel <code>kbplaner_v3</code>) – er wandert nicht
+            ins Netz und wird nicht zwischen Arbeitsplätzen synchronisiert</li>
+        <li><strong>Übergabe an einen anderen Arbeitsplatz:</strong> JSON-Export →
+            Datei übergeben → JSON-Import. Der Dateiname enthält das Datum, der
+            Import zeigt den Stand-Zeitstempel an</li>
+        <li>Wird der Browser-Speicher geleert (z.B. „Browserdaten löschen"), ist der
+            Zwischenstand weg – <strong>vor Pausen einen JSON-Export ziehen</strong></li>
+        <li>Nach Abschluss der Klassenbildung: <strong>„Sitzungsdaten löschen"</strong>
+            im Panel „Daten &amp; Dateien". Die Liste enthält Förderbedarfe und
+            Verhaltensnoten und sollte nicht länger als nötig gespeichert bleiben</li>
       </ul>
     </div>`;
   modal.onclick=e=>{ if(e.target===modal) modal.remove(); };
@@ -1252,10 +1315,37 @@ function scheduleAutoSave(){
   clearTimeout(scheduleAutoSave._t);
   scheduleAutoSave._t=setTimeout(()=>{
     try{
-      const st={v:3,persons,tutors,wishAliases,confirmedAbsent:[...confirmedAbsent]};
+      /* _ts wurde früher nie geschrieben – das Recovery-Banner konnte deshalb
+         nie sagen, wie alt der gefundene Stand ist. Bei zwei Arbeitsplätzen ist
+         genau das die entscheidende Information. */
+      const st={v:3,_ts:Date.now(),persons,tutors,wishAliases,
+                confirmedAbsent:[...confirmedAbsent]};
       localStorage.setItem(AS_KEY,JSON.stringify(st));
     }catch(e){ console.warn('Autosave fehlgeschlagen:',e); }
   },1500);
+}
+
+/* Sitzungsdaten löschen: macht die Löschfrist erfüllbar (Förderbedarf ist ein
+   Gesundheitsdatum nach Art. 9 DSGVO) und gibt einen sauberen Start für den
+   nächsten Jahrgang. Exportierte Dateien bleiben unberührt. */
+function clearSessionData(){
+  if(!confirm('Sitzungsdaten löschen\n\n'
+    +'Alle geladenen Personen, Klassen und Tutordaten werden aus dem Tool und '
+    +'aus dem Browser-Speicher (Autosave) entfernt.\n\n'
+    +'Bereits exportierte CSV-, Word-, PDF- und JSON-Dateien bleiben erhalten.\n\n'
+    +'Wirklich löschen?')) return;
+  persons=[]; groups=[[],[],[],[],[]];
+  tutors=Array.from({length:5},()=>[{kürzel:'',fächer:''},{kürzel:'',fächer:''},{kürzel:'',fächer:''}]);
+  wishAliases={}; confirmedAbsent=new Set();
+  totalStudents=0; maxDEperGroup=0; lastManualId=null; lastCSVText=null;
+  document.getElementById('recoverBanner')?.remove();
+  renderGroups(); updateStats(); renderZuteilung(); renderKlassenansicht();
+  /* Erst jetzt löschen: die Render-Aufrufe oben haben einen verzögerten
+     Autosave eingeplant, der den Schlüssel sonst gleich wieder anlegt. */
+  clearTimeout(scheduleAutoSave._t);
+  try{ localStorage.removeItem(AS_KEY); }catch(e){}
+  document.getElementById('msgArea').innerHTML=
+    '<p class="info">✔ Sitzungsdaten gelöscht (Tool und Browser-Speicher).</p>';
 }
 
 /* Recovery-Banner beim Seitenstart */
@@ -1269,7 +1359,8 @@ function scheduleAutoSave(){
     const ts=st._ts?d.toLocaleString('de'):'(Zeitstempel unbekannt)';
     const banner=document.createElement('div');
     banner.id='recoverBanner';
-    banner.innerHTML=`<span>💾 Letzte Sitzung gefunden: <strong>${st.persons.length} Personen</strong></span>`
+    banner.innerHTML=`<span>💾 Letzte Sitzung gefunden: <strong>${st.persons.length} Personen</strong>`
+      +`<span style="opacity:.75;margin-left:.4rem">· Stand: ${escHtml(ts)}</span></span>`
       +`<div style="display:flex;gap:.4rem">`
       +`<button id="recoverBtn" style="background:var(--green,#16a34a);color:#fff;border:none;border-radius:4px;padding:.28rem .6rem;cursor:pointer;font-size:.8rem">Wiederherstellen</button>`
       +`<button onclick="document.getElementById('recoverBanner')?.remove()" style="background:#475569;color:#fff;border:none;border-radius:4px;padding:.28rem .6rem;cursor:pointer;font-size:.8rem">Verwerfen</button>`
@@ -1284,7 +1375,7 @@ function scheduleAutoSave(){
       persons.filter(p=>p.group!==null).forEach(p=>groups[p.group].push(p.id));
       const tot=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
       maxDEperGroup=totalStudents>0?ceilDiv(tot,5):0;
-      initTutorInputs(); renderGroups(); renderTutors(); updateStats();
+      renderGroups(); updateStats();
       document.getElementById('recoverBanner')?.remove();
       document.getElementById('msgArea').innerHTML='<p class="info">✔ Sitzung wiederhergestellt.</p>';
     };
@@ -1379,7 +1470,7 @@ function renderZuteilung(){
       const p=persons.find(x=>x.id===pid); if(!p) return;
       const card=document.createElement('div');
       card.className='zuteil-card person'+(p.locked?' locked':'');
-      card.draggable=true;
+      card.draggable=!p.locked;   /* Fixierte sind nicht ziehbar */
       card.dataset.id=p.id;
       const isDE=['D','E'].includes(p.av)||['D','E'].includes(p.sv);
       if(hasFoerder(p)) card.style.borderLeft='3px solid #e74c3c';
@@ -1602,13 +1693,11 @@ function attachDrag(){
       const pid=parseInt(e.target.closest('.person')?.dataset.id??e.target.dataset.id);
       const person=persons.find(p=>p.id===pid);
       if(!person) return;
-      /* 1.* (minor): auto-unlock on drag */
-      if(person.locked){
-        person.locked=false;
-        e.target.closest('.person').classList.remove('locked');
-        const lb=e.target.closest('.person').querySelector('.lockBtn');
-        if(lb) lb.textContent='Fixieren';
-      }
+      /* Fixierte Personen sind nicht ziehbar. Früher wurde die Fixierung beim
+         Ziehen stillschweigend aufgehoben – damit war „Als geplant fixieren"
+         keine verlässliche Zusicherung: ein versehentlicher Zug genügte.
+         Zum Verschieben erst „Entsperren" oder das Klassen-Dropdown nutzen. */
+      if(person.locked){ e.preventDefault(); return; }
       e.dataTransfer.setData('text/plain',pid);
     };
   });
@@ -1620,7 +1709,17 @@ function attachDrag(){
       const pid=parseInt(e.dataTransfer.getData('text/plain'));
       if(isNaN(pid)) return;
       const person=persons.find(p=>p.id===pid);
+      if(!person) return;
       const target=parseInt(g.dataset.group);
+      /* Manuelles Verschieben darf alles – aber nicht unbemerkt gegen einen
+         ausdrücklichen Ausschluss. Deshalb Rückfrage statt Sperre. */
+      const konflikt=exclusionConflictInGroup(person,target,pid);
+      if(konflikt.length&&!confirm(
+          `Ausschluss-Konflikt\n\n„${displayName(person)}" soll laut Daten NICHT zusammen mit `
+          +`${konflikt.map(displayName).join(', ')} in eine Klasse.\n\n`
+          +`${klasseName(target)} enthält diese Person(en) bereits.\n\nTrotzdem verschieben?`)){
+        return;
+      }
       groups.forEach(arr=>{const idx=arr.indexOf(pid);if(idx>-1)arr.splice(idx,1);});
       groups[target].push(pid);
       person.group=target;
@@ -1680,6 +1779,8 @@ function attachInlineEdits(){
     inp.oninput=()=>{
       const p=persons.find(x=>x.id===+inp.dataset.pid); if(!p) return;
       p.notiz=inp.value;
+      /* Notizen löste vorher keinen Autosave aus: Tippen, Tab schließen, weg. */
+      scheduleAutoSave();
     };
     /* Stop drag from firing when typing in the note field */
     inp.ondragstart=e=>e.stopPropagation();
@@ -1770,6 +1871,10 @@ function buildPersonsFromRows(rawRows){
   totalStudents=persons.length;
   const totalDE=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
   maxDEperGroup=totalStudents>0?ceilDiv(totalDE,5):0;
+  /* Neuer Datensatz = neue IDs (Zeilenindex). Manuell gesetzte Wunsch-Aliase
+     zeigen danach auf fremde Kinder, deshalb beides zurücksetzen. */
+  wishAliases={};
+  confirmedAbsent=new Set();
   return {ok:true};
 }
 
@@ -1777,14 +1882,16 @@ function buildPersonsFromRows(rawRows){
 function applyParsedRows(rawRows, msg){
   if(!rawRows.length){ msg.innerHTML='<p class="error">CSV ist leer.</p>'; return; }
   const res=buildPersonsFromRows(rawRows);
-  if(res.fatal){ msg.innerHTML=`<p class="error">${res.fatal}</p>`; return; }
+  /* escHtml: die Meldungen enthalten Werte aus der CSV (Namen, Topf-Werte).
+     Ohne Escaping landet HTML aus der Datei ausführbar im Dokument. */
+  if(res.fatal){ msg.innerHTML=`<p class="error">${escHtml(res.fatal)}</p>`; return; }
   if(!res.ok){
     msg.innerHTML='<p class="error">Fehler beim Laden:</p><ul class="error">'
-      +res.errors.map(e=>`<li>${e}</li>`).join('')+'</ul>';
+      +res.errors.map(e=>`<li>${escHtml(e)}</li>`).join('')+'</ul>';
     return;
   }
   initialDistribution();
-  renderGroups(); renderTutors(); updateStats();
+  renderGroups(); updateStats();
   msg.innerHTML=`<p class="info">${totalStudents} Personen geladen.</p>`;
 }
 
@@ -1853,7 +1960,7 @@ document.getElementById('tutorLoadBtn').onclick=()=>{
         }
       }
     }
-    renderTutors(); initTutorInputs();
+    renderGroups();   /* Tutor-Kürzel im Klassen-Header der Hauptansicht */
     if(document.getElementById('tab-zuteilung')?.style.display!=='none') renderZuteilung();
     if(msg) msg.innerHTML=`<p class="info">Tutor-CSV geladen (${sepName(sep)}-getrennt).</p>`;
   };
@@ -1883,9 +1990,9 @@ document.getElementById('addPersonBtn').onclick=()=>{
   if(![1,2,3,4,5].includes(topf)) errors.push('Topf muss 1–5 sein.');
   if(!['weiblich','männlich'].includes(geschl))
     errors.push('Geschlecht muss „weiblich" oder „männlich" sein.');
-  if(errors.length){ msg.innerHTML='<p class="error">'+errors.join('<br>')+'</p>'; return; }
+  if(errors.length){ msg.innerHTML='<p class="error">'+escHtml(errors.join(' | '))+'</p>'; return; }
 
-  const newId=persons.length;
+  const newId=nextPersonId();
   const p={
     id:newId, name, vorname, geschlecht:geschl, topf,
     emotionale:false, geistigeen:false, hören:false,
@@ -1906,9 +2013,9 @@ document.getElementById('addPersonBtn').onclick=()=>{
   }
   if(!placed){
     const fb=order[0].i; groups[fb].push(newId); p.group=fb;
-    msg.innerHTML=`<p class="warning">„${full}" in ${klasseName(fb)} (Constraints nicht voll erfüllbar).</p>`;
+    msg.innerHTML=`<p class="warning">„${escHtml(full)}" in ${klasseName(fb)} (Constraints nicht voll erfüllbar).</p>`;
   } else {
-    msg.innerHTML=`<p class="info">„${full}" → ${klasseName(p.group)}.</p>`;
+    msg.innerHTML=`<p class="info">„${escHtml(full)}" → ${klasseName(p.group)}.</p>`;
   }
   lastManualId=newId;
   clearManualForm();
@@ -1927,7 +2034,7 @@ document.getElementById('removePersonBtn').onclick=()=>{
   totalStudents=persons.length;
   const tot=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
   maxDEperGroup=totalStudents>0?ceilDiv(tot,5):0;
-  msg.innerHTML=`<p class="info">„${displayName(p)}" entfernt.</p>`;
+  msg.innerHTML=`<p class="info">„${escHtml(displayName(p))}" entfernt.</p>`;
   lastManualId=null;
   renderGroups(); updateStats();
 };
@@ -1976,15 +2083,11 @@ function lockedPreflightCheck(){
       return `D/E-Grenzwert – ${klasseName(g)}: ${cnt} fixierte D/E-Personen (max ${maxDEperGroup}).`;
   }
   /* 3.3: Detect locked persons who violate their own NICHTINEIN entry */
-  const nm3={};
-  persons.forEach(p=>{ nm3[displayName(p).toLowerCase()]=p.id; });
   for(const p of persons.filter(x=>x.locked&&x.nichtinein)){
-    const norm=p.nichtinein.toLowerCase().trim();
-    const jId=nm3[norm];
-    if(jId===undefined) continue;
-    const pJ=persons.find(x=>x.id===jId);
-    if(pJ&&pJ.locked&&pJ.group===p.group)
-      return `Ausschluss-Konflikt: „${displayName(p)}" und „${displayName(pJ)}" sind beide fixiert in ${klasseName(p.group)} – NICHTINEIN nicht erfüllbar.`;
+    for(const pJ of getExclusionPartners(p)){
+      if(pJ.locked&&pJ.group===p.group&&p.group!==null)
+        return `Ausschluss-Konflikt: „${displayName(p)}" und „${displayName(pJ)}" sind beide fixiert in ${klasseName(p.group)} – NICHTINEIN nicht erfüllbar.`;
+    }
   }
   return null;
 }
@@ -2001,16 +2104,10 @@ const SOLVER_ITERATIONS = 80000;
 function buildSolverContext(){
   const G=5;
 
-  /* NICHTINEIN-Ausschlusspaare als Set (kleinere id zuerst) */
-  const nameMap={};
-  persons.forEach(p=>{ nameMap[displayName(p).toLowerCase()]=p.id; });
-  const exclSet=new Set();
-  persons.forEach(p=>{
-    if(!p.nichtinein) return;
-    const jId=nameMap[p.nichtinein.toLowerCase().trim()];
-    if(jId!==undefined&&jId!==p.id)
-      exclSet.add(`${Math.min(p.id,jId)}_${Math.max(p.id,jId)}`);
-  });
+  /* NICHTINEIN-Ausschlusspaare (gemeinsame Quelle, s.o.) */
+  const exclSet=exclusionPairKeys();
+  /* Als Zahlenpaare für den Strafterm im Score – wird pro Iteration gebraucht */
+  const exclPairs=[...exclSet].map(k=>k.split('_').map(Number));
 
   /* Topf-Gesamtzahlen */
   const topfTotal={};
@@ -2023,7 +2120,7 @@ function buildSolverContext(){
   const byId={};
   persons.forEach(p=>{ byId[p.id]=p; });
 
-  return {exclSet, topfTotal, wishPairs, byId, G};
+  return {exclSet, exclPairs, topfTotal, wishPairs, byId, G};
 }
 
 /* 2.2: Score – nutzt globale groups[] + person.group */
@@ -2034,7 +2131,7 @@ function hasFoerder(p){
 }
 
 function computeSolverScore(ctx, mode){
-  const {wishPairs, byId, G}=ctx;
+  const {wishPairs, exclPairs, byId, G}=ctx;
   const avgF=persons.filter(p=>p.geschlecht==='weiblich').length/G;
 
   /* Geschlechterabweichung: Σ |female[g] - avgF| */
@@ -2058,13 +2155,24 @@ function computeSolverScore(ctx, mode){
     return pi&&pj&&pi.group!==null&&pi.group===pj.group;
   }).length;
 
+  /* Aktive Ausschluss-Verletzungen. swapValid() verhindert nur, dass NEUE
+     entstehen – eine Verletzung, die der Greedy-Start erzeugt hat (er führt
+     Wunschpaare zusammen), blieb vorher für immer bestehen, weil der Score sie
+     nicht bestraft hat. Deshalb hier ein Term, der beide Modi dominiert. */
+  let exclViol=0;
+  for(const [i,j] of exclPairs){
+    const pi=byId[i], pj=byId[j];
+    if(pi&&pj&&pi.group!==null&&pi.group===pj.group) exclViol++;
+  }
+
   /* Gewichtung:
      'struktur' → Geschlecht dominiert, FB sekundär
      'wuensche' → Wünsche dominieren, FB sekundär
-     FB-Streuung wird in beiden Modi gleichgewichtig bestraft (-5) */
+     FB-Streuung wird in beiden Modi gleichgewichtig bestraft (-5)
+     Ausschluss schlägt in beiden Modi alles andere (-1000) */
   return mode==='struktur'
-    ? -10*dev - 5*fbDev + wish
-    : -dev   - 5*fbDev + 10*wish;
+    ? -1000*exclViol - 10*dev - 5*fbDev + wish
+    : -1000*exclViol -     dev - 5*fbDev + 10*wish;
 }
 
 /* 2.3: Prüft ob Tausch (a→gb, b→ga) alle Hard-Constraints erfüllt.
@@ -2157,6 +2265,18 @@ document.getElementById('strukturBtn').onclick=()=>{
   const preError=lockedPreflightCheck();
   if(preError){ document.getElementById('msgArea').innerHTML=`<p class="error">${preError}</p>`; return; }
 
+  /* Rückfrage: der Lauf startet mit greedyFallback() und verteilt damit ALLE
+     nicht fixierten Personen neu. Ohne diesen Dialog war eine Stunde Handarbeit
+     einen Klick weit von der Tonne entfernt. */
+  const lockedN=persons.filter(p=>p.locked).length;
+  const zugeteilt=persons.filter(p=>p.group!==null).length;
+  if(zugeteilt&&!confirm(
+      `Struktur optimieren\n\n`
+      +`Alle nicht fixierten Schüler/innen werden neu verteilt – die aktuelle `
+      +`Einteilung geht dabei verloren.\n\n`
+      +`Fixiert und damit geschützt: ${lockedN} von ${persons.length}.\n\n`
+      +`Fortfahren?`)) return;
+
   hillClimbSolve('struktur');
   renderGroups(); updateStats();
   document.getElementById('msgArea').innerHTML='<p class="info">Struktur optimiert (Geschlechterbalance).</p>';
@@ -2246,6 +2366,11 @@ function canPlaceInGroup(pid, targetIdx){
   const topfTotal=persons.filter(x=>x.topf===p.topf).length;
   const isDE=['D','E'].includes(p.av)||['D','E'].includes(p.sv);
 
+  /* Ausschluss: liegt eine NICHTINEIN-Person bereits in der Zielklasse?
+     Diese Prüfung fehlte – dadurch hat der Greedy-Start Wunschpaare auch dann
+     zusammengeführt, wenn sie sich ausschließen. */
+  if(srcIdx!==targetIdx&&exclusionConflictInGroup(p,targetIdx,pid).length) return false;
+
   /* Target ceilings */
   if(groups[targetIdx].length+1>ceilDiv(totalStudents,5)) return false;
   const topfInTgt=groups[targetIdx].filter(id=>persons.find(x=>x.id===id).topf===p.topf).length;
@@ -2320,7 +2445,7 @@ function savePersonEdit(pid,card){
   if(!newVN&&!newNM)  errors.push('Vorname oder Name darf nicht leer sein.');
   if(persons.some(x=>x.id!==pid&&displayName(x).toLowerCase()===newFN.toLowerCase()))
     errors.push(`Name „${newFN}" bereits vergeben.`);
-  if(errors.length){ errDiv.innerHTML=errors.join('<br>'); return; }
+  if(errors.length){ errDiv.innerHTML=escHtml(errors.join(' | ')); return; }
   p.vorname    =newVN;
   p.name       =newNM;
   p.topf       =+card.querySelector('.ei-topf').value;
@@ -2360,9 +2485,12 @@ function escHtml(str){
    EMOTIONALE,GEISTIGEEN,HÖREN,KÖRPERLMOT,LERNEN,SEHEN,SPRACHE,
    ERSTWUNSCH,ZWEITWU,NICHTINEIN,Locked,Notiz                       */
 document.getElementById('exportBtn').onclick=()=>{
-  const header='NAME,VORNAME,Klasse,TutorKürzel,Topf,GESCHLECHT,AV,SV,'
-              +'EMOTIONALE,GEISTIGEEN,HÖREN,KÖRPERLMOT,LERNEN,SEHEN,SPRACHE,'
-              +'ERSTWUNSCH,ZWEITWU,NICHTINEIN,Locked,Notiz';
+  /* Semikolon wie in allen anderen Exporten (deutscher Excel-Standard). Der
+     Import erkennt das Trennzeichen selbst, ältere Komma-Dateien laden weiter. */
+  const SEP=';';
+  const header=['NAME','VORNAME','Klasse','TutorKürzel','Topf','GESCHLECHT','AV','SV',
+                'EMOTIONALE','GEISTIGEEN','HÖREN','KÖRPERLMOT','LERNEN','SEHEN','SPRACHE',
+                'ERSTWUNSCH','ZWEITWU','NICHTINEIN','Locked','Notiz'].join(SEP);
   const rows=persons.map(p=>{
     const ts=(p.group!=null?tutors[p.group]:null)||[];
     const tk=ts.filter(t=>t.kürzel).map(t=>t.kürzel).join('; ');
@@ -2376,9 +2504,12 @@ document.getElementById('exportBtn').onclick=()=>{
       yn(p.lernen),yn(p.sehen),yn(p.sprache),
       csvEscape(p.erstwunsch),csvEscape(p.zweitwu),csvEscape(p.nichtinein),
       p.locked,csvEscape(p.notiz||'')
-    ].join(',');
+    ].join(SEP);
   });
-  downloadCSV([header,...rows].join('\n'),'klasseneinteilung_export.csv');
+  /* Datum im Namen, damit zwei Stände nicht ununterscheidbar im Download-Ordner
+     liegen (dieselbe Begründung wie beim JSON-Export). */
+  downloadCSV('﻿'+[header,...rows].join('\r\n'),
+              `Klasseneinteilung_Jg5_${isoDate()}.csv`);
 };
 
 document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
@@ -2392,6 +2523,7 @@ document.getElementById('importFile').onchange=e=>{
   reader.onload=ev=>{
     const rows=csvParse(ev.target.result);
     const errors=[];
+    let klassenGesetzt=0;
     /* Build lookup by "VORNAME NAME" and also "NAME VORNAME" for robustness */
     const byFull={};
     persons.forEach(p=>{
@@ -2409,9 +2541,17 @@ document.getElementById('importFile').onchange=e=>{
         errors.push(`Zeile ${line}: „${r.VORNAME||''} ${r.NAME||''}".trim() nicht gefunden – übersprungen.`);
         return;
       }
-      /* Gruppe: accept "Gruppe 1", "1", "5.1" */
-      const raw=String(r.Gruppe||'').replace(/Gruppe\s*/i,'').replace('5.','').trim();
-      if(raw) person.group=+raw-1;
+      /* Klasse: akzeptiert "Klasse 5.1", "5.1", "Gruppe 1", "1".
+         Der Export schreibt die Spalte „Klasse", gelesen wurde früher nur
+         „Gruppe" – dadurch hat dieser Import die Klassenzuordnung stillschweigend
+         komplett verworfen und trotzdem „Import erfolgreich" gemeldet. */
+      const rawK=String(r.Klasse??r.Gruppe??r.Gruppe1??'')
+        .replace(/^(Klasse|Gruppe)\s*/i,'').replace(/^5\./,'').trim();
+      if(rawK){
+        const gi=+rawK-1;
+        if(Number.isInteger(gi)&&gi>=0&&gi<5){ person.group=gi; klassenGesetzt++; }
+        else errors.push(`Zeile ${line}: Klasse „${rawK}" nicht erkannt – übersprungen.`);
+      }
       /* AV / SV */
       /* AV / SV – expliziter Wert überschreibt Default 'C' */
       if(r.AV&&['A','B','C','D','E'].includes(r.AV)) person.av=r.AV;
@@ -2421,8 +2561,16 @@ document.getElementById('importFile').onchange=e=>{
       /* Notiz */
       if(r.Notiz!==undefined) person.notiz=r.Notiz||'';
     });
-    if(errors.length) msg.innerHTML='<p class="warning">'+errors.join('<br>')+'</p>';
-    else msg.innerHTML='<p class="info">Import erfolgreich.</p>';
+    /* Konkrete Zahl statt pauschalem „erfolgreich" – ein Import, der nichts
+       zugeordnet hat, darf nicht wie ein geglückter aussehen. */
+    const bilanz=`${klassenGesetzt} von ${rows.length} Zeilen einer Klasse zugeordnet.`;
+    if(!klassenGesetzt)
+      msg.innerHTML=`<p class="warning">⚠ Keine Klassenzuordnung gefunden – `
+        +`erwartet wird eine Spalte „Klasse" (z.B. „Klasse 5.1") oder „Gruppe".</p>`
+        +(errors.length?'<p class="warning">'+escHtml(errors.join(' | '))+'</p>':'');
+    else if(errors.length)
+      msg.innerHTML=`<p class="warning">${escHtml(bilanz)}<br>`+escHtml(errors.join(' | '))+'</p>';
+    else msg.innerHTML=`<p class="info">✔ Import erfolgreich – ${escHtml(bilanz)}</p>`;
     groups=[[],[],[],[],[]];
     persons.forEach(p=>{ if(p.group!=null&&p.group>=0&&p.group<5) groups[p.group].push(p.id); });
     const tot=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
@@ -2434,15 +2582,25 @@ document.getElementById('importFile').onchange=e=>{
 
 /* ── Full JSON export / import ───────────────────────────────────────────── */
 document.getElementById('fullExportBtn').onclick=()=>{
-  const state={v:3, persons, tutors,
+  const now=new Date();
+  const state={v:3, _ts:now.getTime(), persons, tutors,
     wishAliases,
     confirmedAbsent:[...confirmedAbsent]};   /* v3: Wunsch-Aliase + bestätigte Abwesenheiten */
   const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json;charset=utf-8;'});
   const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download='klasseneinteilung_vollexport.json'; a.click();
+  const a=document.createElement('a'); a.href=url;
+  /* Datum im Dateinamen: die Datei ist der Transportweg zwischen den beiden
+     Arbeitsplätzen. Ein konstanter Name endet als „vollexport (3).json" und
+     niemand weiß mehr, welcher Stand der aktuelle ist. */
+  a.download=`Klassenbildung_Jg5_${isoDate(now)}.json`;
+  a.click();
   URL.revokeObjectURL(url);
+  document.getElementById('msgArea').innerHTML=
+    `<p class="info">✔ Stand vom ${now.toLocaleString('de')} exportiert `
+    +`(${persons.length} Personen).</p>`;
 };
 
+document.getElementById('clearDataBtn').onclick=clearSessionData;
 document.getElementById('fullImportBtn').onclick=()=>document.getElementById('fullImportFile').click();
 document.getElementById('fullImportFile').onchange=e=>{
   const file=e.target.files[0]; if(!file) return;
@@ -2455,7 +2613,23 @@ document.getElementById('fullImportFile').onchange=e=>{
     if(!state.persons||!state.tutors){
       msg.innerHTML='<p class="error">Unbekanntes Export-Format.</p>'; return;
     }
+    /* Versionsprüfung: eine neuere Datei kann Felder enthalten, die diese
+       Programmversion nicht kennt – dann lieber abbrechen als still verfälschen. */
+    if(typeof state.v==='number'&&state.v>3){
+      msg.innerHTML=`<p class="error">Diese Datei wurde mit einer neueren `
+        +`Programmversion erstellt (Format v${state.v}, dieses Tool kann v3). `
+        +`Bitte die neuere Tool-Version verwenden.</p>`;
+      return;
+    }
     persons=state.persons; totalStudents=persons.length;
+    /* Pflichtfelder auffüllen, falls eine ältere Datei sie nicht hatte.
+       Ungültige Werte werden auf 'C' gesetzt – wie beim CSV-Import (parseAVSV). */
+    persons.forEach(p=>{
+      if(!['A','B','C','D','E'].includes(p.av)) p.av='C';
+      if(!['A','B','C','D','E'].includes(p.sv)) p.sv='C';
+      p.locked=!!p.locked;
+      if(p.group===undefined) p.group=null;
+    });
     tutors=state.tutors;
     wishAliases=state.wishAliases||{};
     confirmedAbsent=new Set(state.confirmedAbsent||[]);
@@ -2464,8 +2638,14 @@ document.getElementById('fullImportFile').onchange=e=>{
     lastManualId=null;
     groups=[[],[],[],[],[]];
     persons.forEach(p=>{ if(p.group!=null&&p.group>=0&&p.group<5) groups[p.group].push(p.id); });
-    initTutorInputs(); renderGroups(); renderTutors(); updateStats();
-    msg.innerHTML=`<p class="info">${persons.length} Personen und Tutordaten geladen.</p>`;
+    renderGroups(); updateStats();
+    /* Stand-Zeitstempel anzeigen – bei zwei Arbeitsplätzen die wichtigste
+       Information beim Einlesen einer übergebenen Datei. */
+    const stand=state._ts
+      ? `Stand: ${new Date(state._ts).toLocaleString('de')}`
+      : 'Stand: unbekannt (Datei einer älteren Version ohne Zeitstempel)';
+    msg.innerHTML=`<p class="info">✔ ${persons.length} Personen und Tutordaten geladen. `
+      +`<span style="color:var(--muted)">${escHtml(stand)}</span></p>`;
   };
   reader.readAsText(file); e.target.value='';
 };
@@ -2778,7 +2958,11 @@ document.getElementById('klassenansichtContainer').addEventListener('click',e=>{
 
 /* ── Drucken / PDF ───────────────────────────────────────────────────────── */
 document.getElementById('printBtn').onclick=()=>{
+  if(!persons.length){ alert('Keine Personen geladen.'); return; }
   const win=window.open('','Print','width=800,height=600');
+  /* Popup-Guard wie beim Einzelklassen-Export – ohne ihn scheiterte der Druck
+     bei blockierten Popups mit einem TypeError in der Konsole. */
+  if(!win){ alert('Bitte Popups für diese Seite erlauben, um den Druck zu nutzen.'); return; }
   const html=`
 <html><head><title>Klasseneinteilung</title>
 <style>body{font-family:Arial,sans-serif;padding:20px}
@@ -2802,10 +2986,13 @@ ${groups.map((ids,g)=>`
 <tbody>${groups.map((_,g)=>{
   const ts=tutors[g].filter(t=>t.kürzel||t.fächer);
   const rows=ts.length?ts:[{kürzel:'—',fächer:'—'}];
-  return rows.map((t,j)=>`<tr>${j===0?`<td rowspan="${rows.length}">>${klasseName(g)}</td>`:''}<td>${t.kürzel||'—'}</td><td>${t.fächer||'—'}</td></tr>`).join('');
+  return rows.map((t,j)=>`<tr>${j===0?`<td rowspan="${rows.length}">${klasseName(g)}</td>`:''}<td>${t.kürzel||'—'}</td><td>${t.fächer||'—'}</td></tr>`).join('');
 }).join('')}</tbody></table>
 </body></html>`;
-  win.document.write(html); win.document.close(); win.focus(); win.print();
+  win.document.write(html); win.document.close(); win.focus();
+  /* Kurz warten wie beim Einzelklassen-PDF: sofortiges print() druckte in
+     manchen Browsern eine leere Seite, weil das Layout noch nicht stand. */
+  setTimeout(()=>win.print(),350);
 };
 
 /* ── Word-Download (alle Klassen, Querformat) ────────────────────────────── */
@@ -2848,39 +3035,6 @@ function downloadAllAsWord(){
 document.getElementById('printWordBtn').onclick=downloadAllAsWord;
 
 /* ── Tutor manual inputs ─────────────────────────────────────────────────── */
-function initTutorInputs(){
-  const tbody=document.querySelector('#tutorInputTable tbody');
-  if(!tbody) return;
-  tbody.innerHTML='';
-  const iS='width:100%;padding:.22rem .3rem;border:1px solid #ccc;border-radius:3px;font-size:.82rem;box-sizing:border-box';
-  const SEP='border-top:2px solid #95a5a6';
-  const LABELS=['1.','2.','3.'];
-  for(let i=0;i<5;i++){
-    for(let j=0;j<3;j++){
-      const t=tutors[i][j];
-      const tr=document.createElement('tr');
-      let cells='';
-      if(j===0)
-        cells=`<td rowspan="3" style="padding:.2rem .4rem;white-space:nowrap;vertical-align:middle;${SEP}">` + klasseName(i) + `</td>`;
-      cells+=`<td style="padding:.1rem .3rem;color:#7f8c8d;font-size:.75rem;white-space:nowrap;${j===0?SEP:''}">${LABELS[j]}</td>
-              <td style="padding:.1rem .3rem;${j===0?SEP:''}">
-                <input type="text" value="${escHtml(t.kürzel)}" placeholder="Kü."
-                       style="${iS}" data-ti="${i}" data-tj="${j}" data-tf="kürzel">
-              </td>
-              <td style="padding:.1rem .3rem;${j===0?SEP:''}">
-                <input type="text" value="${escHtml(t.fächer)}" placeholder="z.B. De/Ge"
-                       style="${iS}" data-ti="${i}" data-tj="${j}" data-tf="fächer">
-              </td>`;
-      tr.innerHTML=cells;
-      tbody.appendChild(tr);
-    }
-  }
-  tbody.querySelectorAll('input').forEach(inp=>{
-    inp.oninput=()=>{ tutors[+inp.dataset.ti][+inp.dataset.tj][inp.dataset.tf]=inp.value; renderTutors(); };
-  });
-}
-
-initTutorInputs();
 </script>
 
 </body>
