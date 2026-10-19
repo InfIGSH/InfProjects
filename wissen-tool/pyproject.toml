@@ -1,0 +1,31 @@
+[project]
+name = "wissen"
+version = "0.1.0"
+description = "Liest YouTube-Transkripte, Online-Kurse und PDFs aus und legt sie zentral als Markdown ab."
+requires-python = ">=3.11"
+dependencies = [
+    "yt-dlp>=2024.8.6",
+    "playwright>=1.44",
+    "trafilatura>=1.12",
+    "pypdf>=4.2",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+wissen = "wissen.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"wissen.vorlagen" = ["*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

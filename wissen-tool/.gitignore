@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Die eigene Konfiguration bleibt lokal -- sie enthält Pfade dieses Rechners.
+wissen.toml
