@@ -53,6 +53,21 @@ copy wissen.toml.example "%USERPROFILE%\.config\wissen\wissen.toml"
 
 Wird `py` nicht gefunden: `python` statt `py -3`.
 
+**Mehrfach ausführen ist unbedenklich.** Die Befehle sind idempotent: `pip
+install -e .` landet immer in derselben `.venv`, und `playwright install`
+überspringt schon vorhandene Browser (daher der Schalter `--force`, der ein
+Neuinstallieren erzwingt) und räumt alte Versionen von sich aus auf. Die
+Browser liegen ohnehin nicht in der `.venv`, sondern in einem gemeinsamen
+Cache — unter Windows `%LOCALAPPDATA%\ms-playwright`, unter macOS
+`~/Library/Caches/ms-playwright`, unter Linux `~/.cache/ms-playwright`.
+
+Nachsehen, was installiert ist (zeigt alle Playwright-Installationen des
+Rechners): `playwright install --list`. Alles entfernen:
+`playwright uninstall --all`.
+
+`playwright install chromium` lädt drei Pakete — Chrome for Testing, ffmpeg
+und die Headless Shell, zusammen etwa 200 MB. Das ist normal.
+
 Zusätzlich **ffmpeg** (nur für Screenshots aus Videos nötig, sonst
 überspringen):
 
