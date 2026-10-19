@@ -22,6 +22,55 @@ def test_kurz_hash_ist_stabil():
     assert schema.kurz_hash("a") != schema.kurz_hash("b")
 
 
+# -- Dateinamen aus URLs -------------------------------------------------
+
+
+def test_dateiname_nennt_host_und_pfadende():
+    name = schema.dateiname_fuer_url(
+        "https://campus.thinkspace.ac.uk/courses/329/lessons/how-to-write-a-melody"
+    )
+    assert name.startswith("campus-thinkspace-ac-uk_")
+    assert "how-to-write-a-melody" in name
+    # Kein "https-" am Anfang -- das Schema trägt nichts zur Unterscheidung bei.
+    assert not name.startswith("https")
+
+
+def test_dateiname_unterscheidet_aehnliche_lektionen():
+    # Lektionen eines Kurses teilen den Anfang der URL; beim Kürzen des
+    # ganzen URL-Slugs fielen genau die unterscheidenden Enden weg.
+    basis = "https://campus.thinkspace.ac.uk/courses/329/lessons/"
+    a = schema.dateiname_fuer_url(basis + "how-to-write-a-melody")
+    b = schema.dateiname_fuer_url(basis + "how-to-write-a-long-arc-melody")
+    assert a != b
+
+
+def test_dateiname_bleibt_kurz():
+    lang = "https://campus.thinkspace.ac.uk/" + "/".join(["sehr-langes-segment"] * 8)
+    assert len(schema.dateiname_fuer_url(lang)) <= 80
+
+
+def test_dateiname_ist_stabil():
+    url = "https://campus.thinkspace.ac.uk/c/329/m/2/l/4471"
+    assert schema.dateiname_fuer_url(url) == schema.dateiname_fuer_url(url)
+
+
+def test_dateiname_ohne_pfad():
+    name = schema.dateiname_fuer_url("https://campus.thinkspace.ac.uk/")
+    assert name.startswith("campus-thinkspace-ac-uk_")
+    assert name.count("_") == 1
+
+
+def test_dateiname_unterscheidet_nach_abfrageteil():
+    # Gleicher Pfad, andere Abfrage -- der Hash deckt die ganze URL ab.
+    a = schema.dateiname_fuer_url("https://kurs.de/l?id=1")
+    b = schema.dateiname_fuer_url("https://kurs.de/l?id=2")
+    assert a != b
+
+
+def test_dateiname_ohne_host():
+    assert schema.dateiname_fuer_url("nicht-mal-eine-url")
+
+
 @pytest.mark.parametrize(
     "eingabe,erwartet",
     [("4:12", 252), ("1:02:03", 3723), ("252", 252), ("0:00", 0), ("1:30.5", 90)],

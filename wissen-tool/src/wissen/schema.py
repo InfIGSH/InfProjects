@@ -46,6 +46,25 @@ def kurz_hash(wert: str, laenge: int = 10) -> str:
     return hashlib.sha256(wert.encode("utf-8")).hexdigest()[:laenge]
 
 
+def dateiname_fuer_url(url: str) -> str:
+    """Kurzer, sprechender und eindeutiger Dateiname fuer eine URL.
+
+    Aus der ganzen URL einen Slug zu machen taugt nicht: alle Lektionen eines
+    Kurses teilen den Anfang, und beim Kuerzen fliegt gerade das Ende weg, das
+    sie unterscheidet. Darum Host plus die letzten Pfadsegmente, und ein
+    Hash der vollstaendigen URL als Garantie gegen Namensgleichheit.
+    """
+    from urllib.parse import urlparse
+
+    zerlegt = urlparse(url)
+    teile = [slugify(zerlegt.hostname or "ohne-host", 30)]
+    segmente = [s for s in (zerlegt.path or "").split("/") if s]
+    if segmente:
+        teile.append(slugify("-".join(segmente[-3:]), 36))
+    teile.append(kurz_hash(url, 6))
+    return "_".join(t for t in teile if t and t != "ohne-titel")
+
+
 def datei_hash(pfad, laenge: int = 10) -> str:
     h = hashlib.sha256()
     with open(pfad, "rb") as fh:

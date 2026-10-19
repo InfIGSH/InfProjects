@@ -73,12 +73,18 @@ def befehl_inspect(args) -> int:
     from . import pruefen
 
     cfg = config.lade(args.config)
-    ausgabe = Path(args.ausgabe).expanduser() if args.ausgabe else Path.cwd() / "berichte"
+    # Aufgeloest, damit die ausgegebenen Pfade unmissverstaendlich sind --
+    # ein relatives "./berichte" sagt nicht, wo es tatsaechlich liegt.
+    ausgabe = (
+        Path(args.ausgabe).expanduser() if args.ausgabe else Path.cwd() / "berichte"
+    ).resolve()
     bericht = pruefen.pruefe(
         cfg, args.url, ausgabe, klicks=args.klick, headless=args.headless
     )
-    print(f"\nBericht: {bericht}")
-    print("Darin stehen Frames, Kandidaten und ein Vorschlag für wissen.toml.")
+    print(f"\nOrdner:  {ausgabe}")
+    print(f"Bericht: {bericht.name}")
+    print("Darin stehen Frames, Kandidaten und ein Vorschlag für wissen.toml,")
+    print("daneben das Seitenbild (.png) und das HTML jedes Frames.")
     return 0
 
 

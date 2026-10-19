@@ -127,7 +127,7 @@ def pruefe(
                 ]
 
             # Rohdaten zum Nachsehen ablegen.
-            marke = schema.slugify(url, 60)
+            marke = schema.dateiname_fuer_url(url)
             bild = ausgabe / f"{marke}.png"
             with contextlib.suppress(Exception):
                 seite.screenshot(path=str(bild), full_page=True)
@@ -155,6 +155,6 @@ def pruefe(
         finally:
             seite.close()
 
-    bericht = ausgabe / f"{schema.slugify(url, 60)}.bericht.md"
+    bericht = ausgabe / f"{schema.dateiname_fuer_url(url)}.bericht.md"
     bericht.write_text("\n".join(zeilen).rstrip() + "\n", encoding="utf-8")
     return bericht

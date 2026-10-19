@@ -220,12 +220,23 @@ erkennbar, wohin das Material gehört.
 Steht danach `KEIN Transkript gefunden` in der Ausgabe:
 
 ```bash
-wissen inspect "<dieselbe URL>" --ausgabe ./berichte
+wissen inspect "<dieselbe URL>"
 ```
 
-Das schreibt einen Bericht mit allen Frames und Transkript-Kandidaten plus
-einem fertigen Block für `wissen.toml`. Den Bericht kannst du mir geben,
-dann trage ich den Selektor ein.
+Das schreibt drei Sachen in den Ordner `berichte` **im aktuellen
+Verzeichnis**:
+
+| Datei | Inhalt |
+| --- | --- |
+| `<host>_<lektion>_<kennung>.bericht.md` | Frames, Transkript-Kandidaten mit fertigem Selektor, Vorschlag für `wissen.toml` |
+| `….png` | Bild der ganzen Seite |
+| `….frame0.html`, `.frame1.html`, … | das HTML jedes Frames zum Nachsehen |
+
+Der Befehl gibt den vollen Ordnerpfad aus, du musst also nicht suchen. Mit
+`--ausgabe <pfad>` geht auch ein anderer Ordner.
+
+Den `.bericht.md` kannst du mir geben, dann trage ich den Selektor ein.
+`inspect` liest nur und klickt nichts.
 
 ## 7. Ein ganzes Modul
 
