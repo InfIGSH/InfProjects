@@ -1,0 +1,2887 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>KlassenPlaner</title>
+<style>
+:root{
+  --bg:#f1f5f9;--surface:#fff;--border:#e2e8f0;
+  --text:#1e293b;--muted:#64748b;
+  --accent:#3b82f6;--accent-d:#2563eb;
+  --green:#16a34a;--red:#dc2626;--amber:#d97706;
+  --sh:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.08);
+  --sh-md:0 4px 6px rgba(0,0,0,.07),0 2px 4px rgba(0,0,0,.06);
+}
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;
+     background:var(--bg);margin:0;padding:0;color:var(--text);font-size:14px}
+header{background:linear-gradient(135deg,#1e293b 0%,#334155 100%);color:#fff;
+       padding:.7rem 1.2rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+header h1{margin:0;font-size:1.05rem;font-weight:600;letter-spacing:-.01em}
+main{display:flex;flex-wrap:wrap;padding:.75rem;gap:.75rem}
+.panel{background:var(--surface);border-radius:8px;padding:.9rem 1rem;flex:1 1 280px;
+       min-height:200px;box-shadow:var(--sh-md);border:1px solid var(--border)}
+.panel h2{margin:0 0 .65rem;font-size:.92rem;font-weight:600;
+          border-bottom:1px solid var(--border);padding-bottom:.45rem;color:var(--text)}
+.group{border:2px dashed #cbd5e1;min-height:180px;padding:.4rem;margin-top:.3rem;
+       border-radius:6px;background:#f8fafc;transition:background .15s}
+.group.drag-over{background:#eff6ff;border-color:var(--accent)}
+.person{background:var(--surface);margin:.25rem 0;padding:.4rem .45rem;border-radius:6px;
+        cursor:move;border:1px solid var(--border);box-shadow:var(--sh);
+        display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch}
+.locked{background:#f8fafc;border-color:#94a3b8;cursor:default;opacity:.88}
+.btn{background:var(--accent);color:#fff;border:none;padding:.38rem .8rem;border-radius:5px;
+     cursor:pointer;margin-right:.35rem;margin-top:.22rem;font-size:.82rem;font-weight:500;
+     transition:background .14s,box-shadow .14s;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.btn:hover{background:var(--accent-d);box-shadow:0 2px 4px rgba(0,0,0,.18)}
+#msgArea,#manualMsg{margin-top:.4rem;font-size:.82rem}
+.error{color:var(--red)}.warning{color:var(--amber)}.info{color:var(--green)}
+table{width:100%;border-collapse:collapse;margin-top:.4rem;font-size:.82rem}
+th,td{border:1px solid var(--border);padding:.32rem .45rem;text-align:left}
+th{background:#f8fafc;font-weight:600;color:var(--muted)}
+/* Group details */
+.group-details{margin-bottom:.35rem;border:1px solid var(--border);border-radius:6px;overflow:hidden;box-shadow:var(--sh)}
+.group-details>summary{list-style:none;cursor:pointer;background:#f8fafc;padding:.32rem .55rem;
+  display:flex;align-items:center;gap:.32rem;user-select:none;
+  border-bottom:1px solid var(--border);font-size:.86rem;font-weight:500}
+.group-details>summary::-webkit-details-marker{display:none}
+.group-details>summary::before{content:'▶';font-size:.55rem;color:var(--muted);transition:.15s;flex-shrink:0}
+.group-details[open]>summary::before{content:'▼'}
+.group-details .group{margin:0;border:none;border-radius:0;min-height:45px;padding:.3rem .4rem;background:var(--surface)}
+/* Card details – immer sichtbar */
+.card-details{margin-top:.3rem;padding-top:.28rem;border-top:1px solid #f1f5f9}
+/* Color badges */
+.badge-t4{background:#fff3cd;color:#854d0e;border-radius:4px;padding:.04rem .28rem;font-size:.74rem}
+.badge-t5{background:#fee2e2;color:#991b1b;border-radius:4px;padding:.04rem .28rem;font-size:.74rem;font-weight:700}
+.badge-d{background:#fff3cd;color:#854d0e;border-radius:3px;padding:0 .2rem;font-weight:600;font-size:.73rem}
+.badge-e{background:#fee2e2;color:#991b1b;border-radius:3px;padding:0 .2rem;font-weight:700;font-size:.73rem}
+.sel-d{background:#fff3cd!important;color:#854d0e!important;font-weight:700}
+.sel-e{background:#fee2e2!important;color:#991b1b!important;font-weight:700}
+/* Klassenzuteilung Board */
+#zuteilungBoard{display:flex;flex-wrap:wrap;gap:.6rem;padding:.2rem}
+.zuteil-col{display:flex;flex-direction:column;flex:1 1 160px;min-width:150px;max-width:240px}
+.zuteil-header{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;
+               text-align:center;padding:.32rem .4rem;border-radius:6px 6px 0 0;font-size:.83rem;font-weight:600}
+/* Tutoren-Editor im Spalten-Header */
+.tutor-head-edit>summary{list-style:none}
+.tutor-head-edit>summary::-webkit-details-marker{display:none}
+.tutor-head-edit>summary>span:first-child{transition:transform .15s;display:inline-block}
+.tutor-head-edit[open]>summary>span:first-child{transform:rotate(180deg)}
+.tutor-head-edit input::placeholder{color:#94a3b8}
+.zuteil-col .group{flex:1;min-height:220px;border-radius:0 0 6px 6px;
+                   border:2px dashed #cbd5e1;border-top:none;padding:.25rem;background:#f8fafc}
+.zuteil-card{background:var(--surface);border:1px solid var(--border);border-radius:5px;
+             padding:.28rem .35rem;margin:.15rem 0;cursor:move;font-size:.82rem;
+             box-shadow:var(--sh);transition:box-shadow .12s}
+.zuteil-card:hover{border-color:var(--accent);box-shadow:0 0 0 2px rgba(59,130,246,.2)}
+/* Tab Navigation */
+#tabBar{background:#1e293b;display:flex;gap:0;padding:0 1rem}
+.tab-btn{background:transparent;color:#94a3b8;border:none;padding:.55rem 1.1rem;
+         cursor:pointer;font-size:.85rem;border-bottom:3px solid transparent;transition:.14s;font-weight:500}
+.tab-btn:hover{color:#e2e8f0}
+.tab-btn.active{color:#fff;border-bottom-color:var(--accent);font-weight:600}
+#tab-klassen{padding:0;background:var(--bg);min-height:400px}
+#tab-zuteilung{overflow-x:auto;min-height:400px;padding:.75rem 1rem;background:var(--bg)}
+/* Sub-nav Klassenübersicht */
+.klass-btn{background:transparent;border:1px solid var(--border);border-radius:5px;
+           padding:.22rem .6rem;cursor:pointer;font-size:.8rem;color:var(--muted);font-weight:500}
+.klass-btn:hover{background:var(--border)}
+.klass-btn.active{background:var(--text);color:#fff;border-color:var(--text)}
+/* Sticky Header + Tab-Bar */
+#stickyTop{position:sticky;top:0;z-index:100}
+/* Universal details arrows (für alle außer .group-details die schon eigene haben) */
+details:not(.group-details)>summary{cursor:pointer}
+details:not(.group-details)>summary::before{
+  content:'▶';font-size:.58rem;color:var(--muted);
+  margin-right:.35rem;display:inline-block;vertical-align:.1rem}
+details:not(.group-details)[open]>summary::before{content:'▼'}
+/* Die "Person manuell hinzufügen" details nutzen das obige CSS – span ▶ wird ausgeblendet */
+.person-add>summary{list-style:none}
+.person-add>summary::-webkit-details-marker{display:none}
+#helpModal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;
+           display:flex;align-items:center;justify-content:center}
+.help-body{background:var(--surface);border-radius:10px;max-width:580px;width:90%;
+           max-height:82vh;overflow-y:auto;padding:1.4rem;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+/* Recovery banner */
+#recoverBanner{position:fixed;bottom:0;left:0;right:0;background:#1e293b;color:#fff;
+               padding:.55rem 1rem;display:flex;justify-content:space-between;
+               align-items:center;z-index:999;font-size:.83rem;box-shadow:0 -2px 8px rgba(0,0,0,.2)}
+/* NI warning link */
+.ni-link{color:var(--red);text-decoration:underline;cursor:pointer;border:none;background:none;font:inherit;padding:0}
+.ni-link:hover{color:#991b1b}
+/* Scroll highlight */
+@keyframes highlight-pulse{0%,100%{box-shadow:0 0 0 3px rgba(220,38,38,.4)}50%{box-shadow:0 0 0 6px rgba(220,38,38,.1)}}
+.scroll-highlight{animation:highlight-pulse 1s ease 3}
+</style>
+</style>
+
+<!-- Kein externer Solver erforderlich – reiner JS-Solver eingebettet -->
+</head>
+<body>
+<div id="stickyTop">
+<header>
+  <div>
+    <h1>KlassenPlaner</h1>
+    <div class="subtitle">Klassenbildung · Jahrgang 5</div>
+  </div>
+  <button onclick="showHelp()" title="Hilfe &amp; Schnellübersicht"
+          style="background:rgba(255,255,255,.12);color:#e2e8f0;border:1px solid rgba(255,255,255,.25);
+                 border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:.95rem;font-weight:700;
+                 flex-shrink:0;display:flex;align-items:center;justify-content:center">?</button>
+</header>
+<nav id="tabBar">
+  <button class="tab-btn active" data-tab="main">&#128203; Hauptansicht</button>
+  <button class="tab-btn" data-tab="zuteilung">&#8644; Klassenzuteilung</button>
+  <button class="tab-btn" data-tab="klassen">&#127979; Klassenübersicht</button>
+</nav>
+</div>
+<div id="tab-main">
+<main>
+  <!-- Panel 1 – Eingabe & Steuerung -->
+  <section class="panel" id="panelUpload">
+
+    <!-- ① Daten & Dateien – kompakt, farbcodiert ───────────────────── -->
+    <h2>Daten &amp; Dateien</h2>
+
+    <!-- Personen-CSV (Import, grün) -->
+    <div style="border:1px solid #a7d8b0;border-radius:6px;padding:.55rem .65rem;background:#eafaf0;margin-bottom:.5rem">
+      <span style="font-size:.78rem;font-weight:700;color:#1e7e44;display:block;margin-bottom:.35rem">
+        &#128229; Personen-CSV (Import)
+      </span>
+      <input type="file" id="personFile" accept=".csv" style="font-size:.82rem;max-width:100%"><br>
+      <button class="btn" id="loadBtn" style="margin-top:.35rem;background:#1e7e44">Einlesen</button>
+    </div>
+
+    <!-- Sitzungsspeicher JSON (Import + Export, lila) -->
+    <div style="border:1px solid #c39bd3;border-radius:6px;padding:.55rem .65rem;background:#f9f0ff;margin-bottom:.5rem">
+      <span style="font-size:.78rem;font-weight:700;color:#6c3483;display:block;margin-bottom:.35rem">
+        &#128190; Sitzungsspeicher (JSON)
+      </span>
+      <input type="file" id="fullImportFile" accept=".json" style="display:none;">
+      <button class="btn" id="fullExportBtn" style="background:#8e44ad"
+              title="Alle Personen-, Klassen- und Tutordaten als JSON speichern">JSON-Export</button>
+      <button class="btn" id="fullImportBtn" style="background:#8e44ad"
+              title="Vollexport-JSON laden und Zustand vollständig wiederherstellen">JSON-Import</button>
+    </div>
+
+    <!-- Gebildete Klassen CSV (Import + Export, blau) -->
+    <div style="border:1px solid #aed6f1;border-radius:6px;padding:.55rem .65rem;background:#eaf4fd">
+      <span style="font-size:.78rem;font-weight:700;color:#1a5276;display:block;margin-bottom:.35rem">
+        &#127979; Gebildete Klassen (CSV)
+      </span>
+      <input type="file" id="importFile" accept=".csv" style="display:none;">
+      <button class="btn" id="exportBtn" style="background:#2471a3"
+              title="Gebildete Klassen als CSV exportieren">CSV-Export</button>
+      <button class="btn" id="importBtn" style="background:#2471a3"
+              title="Klassenzuweisungen aus CSV importieren">CSV-Import</button>
+    </div>
+
+    <div id="msgArea" style="margin-top:.6rem;min-height:1.2rem"></div>
+
+    <!-- ② Person manuell hinzufügen (eingeklappt) ──────────────────── -->
+    <details class="person-add" style="margin-top:1rem;border-top:1px solid #ddd;padding-top:.8rem">
+      <summary style="color:#555;font-size:.9rem;font-weight:bold;
+                      list-style:none;display:flex;align-items:center;gap:.4rem">
+        Person manuell hinzufügen&hellip;
+      </summary>
+      <div style="margin-top:.6rem;display:flex;flex-direction:column;gap:.35rem">
+        <div style="display:flex;gap:.4rem">
+          <input id="newVorname" type="text" placeholder="Vorname *"
+                 style="flex:1;padding:.35rem;border:1px solid #ccc;border-radius:3px;font-size:.9rem">
+          <input id="newName"    type="text" placeholder="Name *"
+                 style="flex:1;padding:.35rem;border:1px solid #ccc;border-radius:3px;font-size:.9rem">
+        </div>
+        <div style="display:flex;gap:.4rem">
+          <select id="newTopf"
+                  style="flex:1;padding:.35rem;border:1px solid #ccc;border-radius:3px;font-size:.9rem">
+            <option value="">Topf *</option>
+            <option>1</option><option>2</option><option>3</option>
+            <option>4</option><option>5</option>
+          </select>
+          <select id="newGeschlecht"
+                  style="flex:1;padding:.35rem;border:1px solid #ccc;border-radius:3px;font-size:.9rem">
+            <option value="">Geschlecht *</option>
+            <option>weiblich</option>
+            <option>männlich</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:.4rem">
+          <select id="newAV"
+                  style="flex:1;padding:.35rem;border:1px solid #ccc;border-radius:3px;font-size:.9rem">
+            <option value="">AV (optional)</option>
+            <option>A</option><option>B</option><option selected>C</option>
+            <option>D</option><option>E</option>
+          </select>
+          <select id="newSV"
+                  style="flex:1;padding:.35rem;border:1px solid #ccc;border-radius:3px;font-size:.9rem">
+            <option value="">SV (optional)</option>
+            <option>A</option><option>B</option><option selected>C</option>
+            <option>D</option><option>E</option>
+          </select>
+        </div>
+        <input id="newErstwunsch" type="text" placeholder="Erstwunsch (optional)"
+               style="padding:.35rem;border:1px solid #ccc;border-radius:3px;font-size:.9rem">
+        <input id="newZweitwu"    type="text" placeholder="Zweitwunsch (optional)"
+               style="padding:.35rem;border:1px solid #ccc;border-radius:3px;font-size:.9rem">
+        <input id="newNichtinein" type="text" placeholder="Nicht in einer Gruppe mit (optional)"
+               style="padding:.35rem;border:1px solid #ccc;border-radius:3px;font-size:.9rem">
+        <input id="newNotiz" type="text" placeholder="Notiz (optional)"
+               style="padding:.35rem;border:1px solid #ccc;border-radius:3px;font-size:.9rem">
+        <div style="display:flex;gap:.4rem;align-items:center">
+          <button class="btn" id="addPersonBtn">Hinzufügen</button>
+          <button class="btn" id="removePersonBtn" style="background:#e74c3c"
+                  title="Zuletzt hinzugefügte Person entfernen">
+            Letzten rückgängig
+          </button>
+        </div>
+        <div id="manualMsg"></div>
+      </div>
+    </details>
+  </section>
+
+  <!-- Panel 2 – Klassen -->
+  <section class="panel" id="panelGroups">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.4rem">
+      <h2 style="margin:0;border:none;padding:0">Klassen</h2>
+      <div style="display:flex;gap:.3rem">
+        <button class="btn" id="printBtn" style="margin:0;background:#c0392b;font-size:.78rem;padding:.3rem .6rem"
+                title="Alle Klassen als PDF (Druckdialog → Als PDF speichern)">&#128424; PDF</button>
+        <button class="btn" id="printWordBtn" style="margin:0;background:#2471a3;font-size:.78rem;padding:.3rem .6rem"
+                title="Alle Klassen als Word-Dokument herunterladen">&#128196; Word</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:.3rem;align-items:center;margin:.5rem 0 .4rem;flex-wrap:wrap">
+      <input type="search" id="personSearch" placeholder="&#128269; Name, Topf, Notiz&hellip;"
+             style="flex:1;min-width:140px;padding:.3rem .45rem;border:1px solid #ccc;
+                    border-radius:3px;font-size:.85rem">
+      <button onclick="document.querySelectorAll('.group-details').forEach(d=>d.open=true)"
+              style="font-size:.72rem;padding:.2rem .45rem;background:#7f8c8d;color:#fff;
+                     border:none;border-radius:3px;cursor:pointer;white-space:nowrap">▼ Alle auf</button>
+      <button onclick="document.querySelectorAll('.group-details').forEach(d=>d.open=false)"
+              style="font-size:.72rem;padding:.2rem .45rem;background:#7f8c8d;color:#fff;
+                     border:none;border-radius:3px;cursor:pointer;white-space:nowrap">▲ Alle zu</button>
+    </div>
+    <div id="groupsContainer"></div>
+  </section>
+
+  <!-- Panel 3 – Statistik (Optimieren-Buttons im Header) -->
+  <section class="panel" id="panelStats">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.4rem;
+                border-bottom:1px solid var(--border);padding-bottom:.45rem;margin-bottom:.65rem">
+      <h2 style="margin:0;border:none;padding:0">Statistik</h2>
+      <div style="display:flex;gap:.3rem;flex-wrap:wrap">
+        <button class="btn" id="strukturBtn" style="margin:0;font-size:.76rem;padding:.3rem .55rem"
+                title="Verteilt Schüler/innen gleichmäßig nach Geschlecht, Topf und Förderbedarf">Struktur optimieren</button>
+        <button class="btn" id="wuenscheBtn" style="margin:0;font-size:.76rem;padding:.3rem .55rem"
+                title="Versucht Wunschpartner in dieselbe Klasse zu legen (öffnet Bestätigungsdialog)">Wünsche optimieren</button>
+      </div>
+    </div>
+    <div id="exclusionViolations"></div>
+    <div id="unmatchedWishes"></div>
+    <div id="wishAliasManager"></div>
+    <div id="stats"></div>
+  </section>
+</main>
+</div><!-- /tab-main -->
+
+<div id="tab-zuteilung" style="display:none;min-height:400px;padding:.75rem 1rem;background:var(--bg)">
+  <!-- Tausch-Steuerung -->
+  <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;
+              background:var(--surface);padding:.5rem .75rem;border-radius:6px;
+              border:1px solid var(--border);box-shadow:var(--sh)">
+    <span style="font-size:.83rem;font-weight:500;color:var(--muted);white-space:nowrap">&#8644; Tauschen:</span>
+    <select id="swapA" style="font-size:.83rem;padding:.25rem .4rem;border:1px solid var(--border);border-radius:4px">
+      <option value="0">Klasse 5.1</option><option value="1">Klasse 5.2</option>
+      <option value="2">Klasse 5.3</option><option value="3">Klasse 5.4</option>
+      <option value="4" selected>Klasse 5.5</option>
+    </select>
+    <span style="font-weight:600;color:var(--muted)">↔</span>
+    <select id="swapB" style="font-size:.83rem;padding:.25rem .4rem;border:1px solid var(--border);border-radius:4px">
+      <option value="0" selected>Klasse 5.1</option><option value="1">Klasse 5.2</option>
+      <option value="2">Klasse 5.3</option><option value="3">Klasse 5.4</option>
+      <option value="4">Klasse 5.5</option>
+    </select>
+    <select id="swapMode" style="font-size:.83rem;padding:.25rem .4rem;border:1px solid var(--border);border-radius:4px"
+            title="Was soll getauscht werden?">
+      <option value="both">Schüler/innen + Tutoren</option>
+      <option value="tutors">Nur Tutoren (Klasse bleibt)</option>
+    </select>
+    <button class="btn" onclick="doSwapKlassen()" style="margin:0"
+            title="Führt den ausgewählten Tausch durch">Tauschen</button>
+    <span id="zuteilungMsg" style="font-size:.78rem"></span>
+  </div>
+  <!-- Sortierung -->
+  <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;
+              background:var(--surface);padding:.5rem .75rem;border-radius:6px;
+              border:1px solid var(--border);box-shadow:var(--sh)">
+    <span style="font-size:.83rem;font-weight:500;color:var(--muted);white-space:nowrap">&#8645; Sortieren nach:</span>
+    <select id="zuteilungSortSel" style="font-size:.83rem;padding:.25rem .4rem;border:1px solid var(--border);border-radius:4px">
+      <option value="default">Ursprüngliche Reihenfolge</option>
+      <option value="name">Name</option>
+      <option value="topf">Topf</option>
+      <option value="geschlecht">Geschlecht</option>
+      <option value="av">AV</option>
+      <option value="sv">SV</option>
+      <option value="fb">Förderbedarf</option>
+    </select>
+    <button id="zuteilungSortDirBtn" class="btn" style="margin:0;background:#7f8c8d;font-size:.78rem;padding:.3rem .55rem"
+            title="Sortierrichtung umkehren">▲ Aufsteigend</button>
+  </div>
+  <div id="zuteilungBoard"></div>
+
+  <!-- Tutoren per CSV (optional) – die Bearbeitung erfolgt in den Spalten-Headern -->
+  <div style="margin-top:.9rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;
+              background:var(--surface);border:1px solid var(--border);border-radius:8px;
+              padding:.5rem .75rem;box-shadow:var(--sh);font-size:.82rem">
+    <span style="font-weight:600">&#128104;&#8205;&#127979; Tutoren:</span>
+    <span style="color:var(--muted)">In den Spalten-Headern oben editierbar (aufklappen) · oder per CSV:</span>
+    <input type="file" id="tutorFile" accept=".csv" style="font-size:.8rem">
+    <button class="btn" id="tutorLoadBtn" style="margin:0"
+            title="Tutor-CSV mit Spalten TutorKürzel1–3 / FächerKombi1–3 einlesen">Einlesen</button>
+    <span id="tutorMsg" style="font-size:.8rem"></span>
+  </div>
+</div>
+
+<div id="tab-klassen" style="display:none">
+  <div style="padding:.4rem 1rem;background:#fff;border-bottom:1px solid #ddd;
+              position:sticky;top:0;z-index:10;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+    <input type="search" id="klassenSearch" placeholder="&#128269; Suchen&hellip;"
+           style="width:200px;padding:.3rem .45rem;border:1px solid #ccc;border-radius:3px;font-size:.85rem">
+    <nav id="klassenSubNav" style="display:flex;gap:.25rem;flex-wrap:wrap">
+      <button class="klass-btn active" data-klass="all">Alle Klassen</button>
+      <button class="klass-btn" data-klass="0">5.1</button>
+      <button class="klass-btn" data-klass="1">5.2</button>
+      <button class="klass-btn" data-klass="2">5.3</button>
+      <button class="klass-btn" data-klass="3">5.4</button>
+      <button class="klass-btn" data-klass="4">5.5</button>
+    </nav>
+  </div>
+  <div id="klassenansichtContainer" style="max-width:1100px;margin:0 auto;padding:.6rem 1rem"></div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   App logic – Section 1 (1.1–1.8): New data model + CSV parser
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Utility ─────────────────────────────────────────────────────────────── */
+
+/* ── CSV-Trennzeichen erkennen ───────────────────────────────────────────────
+   Deutsche Excel-Exports nutzen standardmäßig Semikolon (Komma ist hier
+   Dezimaltrennzeichen). Wir zählen die Kandidaten in der Kopfzeile und nehmen
+   das häufigste – respektiert Anführungszeichen, damit Werte mit Trennzeichen
+   nicht mitgezählt werden. */
+const CSV_SEPARATORS=[';',',','\t'];
+function detectSeparator(text){
+  const firstLine=text.replace(/^\uFEFF/,'').split(/\r?\n/)[0]||'';
+  let best=';', bestCount=-1;
+  for(const sep of CSV_SEPARATORS){
+    let count=0, inQ=false;
+    for(let i=0;i<firstLine.length;i++){
+      const ch=firstLine[i];
+      if(ch==='"') inQ=!inQ;
+      else if(ch===sep && !inQ) count++;
+    }
+    if(count>bestCount){ bestCount=count; best=sep; }
+  }
+  return {separator:best, fieldCount:bestCount+1};
+}
+function sepName(sep){ return sep===';'?'Semikolon':sep===','?'Komma':sep==='\t'?'Tab':sep; }
+
+/* ── CSV parsen mit konfigurierbarem Trennzeichen ───────────────────────────── */
+function csvParse(text, separator){
+  const sep=separator||detectSeparator(text).separator;
+  const rows=[];
+  const lines=text.replace(/^\uFEFF/,'').split(/\r?\n/);
+  if(!lines.length) return rows;
+  const parseLine=line=>{
+    const cols=[]; let cur='', inQ=false;
+    for(let i=0;i<line.length;i++){
+      const ch=line[i];
+      if(ch==='"'){
+        if(inQ && line[i+1]==='"'){cur+='"';i++;}
+        else inQ=!inQ;
+      }else if(ch===sep && !inQ){cols.push(cur);cur='';}
+      else cur+=ch;
+    }
+    cols.push(cur);
+    return cols;
+  };
+  const header=parseLine(lines.shift()).map(h=>h.trim());
+  for(const line of lines){
+    if(!line.trim()) continue;
+    const cols=parseLine(line);
+    const obj={};
+    header.forEach((h,i)=>obj[h]=(cols[i]||'').trim());
+    rows.push(obj);
+  }
+  return rows;
+}
+
+/* ── Spalten-Synonyme: Header case-insensitiv + reihenfolgeunabhängig ─────────
+   Mappt jeden Roh-Header auf einen kanonischen Feldnamen. So ist es egal, ob
+   die CSV "NAME","Nachname" oder "name" enthält, und die Reihenfolge der
+   Spalten ist beliebig. Erkennt zusätzlich AV/SV-Spalten der neuen CSV. */
+const COLUMN_SYNONYMS={
+  NAME:       ['name','nachname','familienname','surname','lastname'],
+  VORNAME:    ['vorname','rufname','firstname','givenname'],
+  TOPF:       ['topf','grundschule','herkunft','pot','gs'],
+  GESCHLECHT: ['geschlecht','gender','sex','geschl'],
+  AV:         ['av','arbeitsverhalten','arbeitsv'],
+  SV:         ['sv','sozialverhalten','sozialv'],
+  ERSTWUNSCH: ['erstwunsch','wunsch1','wunsch','ersterwunsch'],
+  ZWEITWU:    ['zweitwu','zweitwunsch','wunsch2','zweiterwunsch'],
+  NICHTINEIN: ['nichtinein','nichtmit','nichtzusammen','ausschluss'],
+  NOTIZ:      ['notiz','notizen','bemerkung','bemerkungen','anmerkung','kommentar'],
+  EMOTIONALE: ['emotionale','emotional','ese','emsoz'],
+  GEISTIGEEN: ['geistigeen','geistig','ge'],
+  HÖREN:      ['hören','hoeren','hk'],
+  KÖRPERLMOT: ['körperlmot','koerperlmot','körperlich','koerperlich','kme'],
+  LERNEN:     ['lernen','lernschwäche','lernschwaeche','le'],
+  SEHEN:      ['sehen','sehbehindert','se'],
+  SPRACHE:    ['sprache','sprachförderung','sprachfoerderung','sb']
+};
+function normalizeHeaderKey(h){
+  return (h||'').toLowerCase()
+    .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
+    .replace(/[\s._\-/]/g,'').trim();
+}
+/* Baut Lookup: normalisiertes Synonym → kanonischer Name */
+const SYNONYM_LOOKUP=(()=>{
+  const m={};
+  for(const [canon,syns] of Object.entries(COLUMN_SYNONYMS)){
+    m[normalizeHeaderKey(canon)]=canon;
+    for(const s of syns) m[normalizeHeaderKey(s)]=canon;
+  }
+  return m;
+})();
+/* Wandelt eine geparste Zeile (Roh-Header) in kanonische Felder um */
+function canonicalizeRow(rawRow){
+  const out={};
+  for(const [rawKey,val] of Object.entries(rawRow)){
+    const canon=SYNONYM_LOOKUP[normalizeHeaderKey(rawKey)];
+    if(canon && !(canon in out)) out[canon]=val; /* erste passende Spalte gewinnt */
+  }
+  return out;
+}
+
+function csvEscape(v){
+  if(v==null) return '';
+  const s=String(v);
+  return (s.includes(',')||s.includes('"')||s.includes('\n'))
+    ? `"${s.replace(/"/g,'""')}"` : s;
+}
+
+function downloadCSV(content,filename){
+  const blob=new Blob([content],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function ceilDiv(a,b){ return Math.ceil(a/b); }
+function floorDiv(a,b){ return Math.floor(a/b); }
+
+/* ── 1.2: Display name helper ───────────────────────────────────────────── */
+function displayName(p){
+  return ((p.vorname||'')+' '+(p.name||'')).trim() || '(unbekannt)';
+}
+
+/* ── 1.4: Förderbedarf labels ───────────────────────────────────────────── */
+const FOERDER = {
+  emotionale:'Emotional', geistigeen:'Geistig',
+  hören:'Hören', körperlmot:'Körper/Mot.',
+  lernen:'Lernen', sehen:'Sehen', sprache:'Sprache'
+};
+
+function foerderTags(p){
+  return Object.entries(FOERDER)
+    .filter(([k])=>p[k])
+    .map(([,l])=>`<span style="background:#3498db;color:#fff;border-radius:3px;`
+                 +`padding:.05rem .3rem;font-size:.75rem;margin-right:.2rem">`
+                 +`🏷 ${l}</span>`)
+    .join('');
+}
+
+/* ── F5: Nomenklatur 5.1–5.5 ─────────────────────────────────────────────── */
+function klasseName(i){ return `Klasse 5.${i+1}`; }
+
+/* ── Farbkodierung Topf / Noten ──────────────────────────────────────────── */
+function topfBadge(t){
+  const cls=t===5?'badge-t5':t===4?'badge-t4':'';
+  const base='font-size:.78rem;padding:.05rem .28rem;border-radius:3px;';
+  if(t===5) return `<span class="badge-t5" style="${base}">T${t}</span>`;
+  if(t===4) return `<span class="badge-t4" style="${base}">T${t}</span>`;
+  return `<span style="${base}color:#7f8c8d">T${t}</span>`;
+}
+function gradeClass(v){ return v==='E'?'sel-e':v==='D'?'sel-d':''; }
+function avsvBadge(v,label){
+  if(!v) return '';
+  if(v==='E') return `<span class="badge-e">${label}:E</span>`;
+  if(v==='D') return `<span class="badge-d">${label}:D</span>`;
+  return `<span style="color:#7f8c8d;font-size:.75rem">${label}:${v}</span>`;
+}
+function genderIcon(p){
+  return p.geschlecht==='weiblich'
+    ?'<span style="color:#d81b60;font-size:.95rem;font-weight:bold;flex-shrink:0">♀</span>'
+    :'<span style="color:#1565c0;font-size:.95rem;font-weight:bold;flex-shrink:0">♂</span>';
+}
+function applyGradeStyle(sel){
+  sel.className=sel.className.replace(/\bsel-[de]\b/g,'').trim();
+  const gc=gradeClass(sel.value);
+  if(gc) sel.classList.add(gc);
+}
+
+/* ── Tutor-Info-Anzeige ──────────────────────────────────────────────────── */
+function tutorInfo(g){
+  const ts=(tutors[g]||[]).filter(t=>t.kürzel&&t.kürzel.trim());
+  if(!ts.length) return '<span style="font-size:.72rem;color:#94a3b8;font-style:italic">Kein Tutor</span>';
+  return ts.map(t=>`<span style="font-size:.72rem;color:var(--muted,#64748b)">`
+    +`<strong>${escHtml(t.kürzel.trim())}</strong>`
+    +(t.fächer?` · ${escHtml(t.fächer)}`:'')
+    +`</span>`).join(' &nbsp;');
+}
+
+/* ── Klassen tauschen: komplett (Schüler+Tutoren) oder nur Tutoren ──────── */
+function doSwapKlassen(){
+  const a=+document.getElementById('swapA').value;
+  const b=+document.getElementById('swapB').value;
+  const mode=document.getElementById('swapMode').value; /* 'both' | 'tutors' */
+  if(a===b){ document.getElementById('msgArea').innerHTML='<p class="warning">Bitte zwei verschiedene Klassen auswählen.</p>'; return; }
+
+  if(mode==='tutors'){
+    /* Nur Tutoren tauschen – Schüler/innen bleiben in ihrer Klasse */
+    [tutors[a],tutors[b]]=[tutors[b],tutors[a]];
+    renderZuteilung(); renderGroups();
+    const m=document.getElementById('zuteilungMsg');
+    if(m) m.innerHTML=`<span class="info">✔ Tutoren von ${klasseName(a)} ↔ ${klasseName(b)} getauscht (Klassen bleiben erhalten).</span>`;
+    return;
+  }
+
+  [groups[a],groups[b]]=[groups[b],groups[a]];
+  groups[a].forEach(pid=>{ const p=persons.find(x=>x.id===pid); if(p) p.group=a; });
+  groups[b].forEach(pid=>{ const p=persons.find(x=>x.id===pid); if(p) p.group=b; });
+  [tutors[a],tutors[b]]=[tutors[b],tutors[a]];
+  renderGroups(); updateStats(); renderZuteilung(); initTutorInputs();
+  const m=document.getElementById('zuteilungMsg');
+  if(m) m.innerHTML=`<span class="info">✔ ${klasseName(a)} ↔ ${klasseName(b)} getauscht (Schüler/innen + Tutoren).</span>`;
+}
+
+/* ── Ausschluss-Verletzungen in Statistik ────────────────────────────────── */
+function getExclusionViolations(){
+  const viols=[]; const seen=new Set();
+  persons.forEach(p=>{
+    if(!p.nichtinein||p.group===null) return;
+    const t=matchPersonByName(p.nichtinein);
+    if(!t||t.group!==p.group) return;
+    const key=`${Math.min(p.id,t.id)}_${Math.max(p.id,t.id)}`;
+    if(seen.has(key)) return;
+    seen.add(key); viols.push({a:p,b:t});
+  });
+  return viols;
+}
+
+function renderExclusionViolations(){
+  const container=document.getElementById('exclusionViolations');
+  if(!container) return;
+  const viols=getExclusionViolations();
+  if(!viols.length){ container.innerHTML=''; return; }
+
+  const details=document.createElement('details');
+  details.open=true;
+  details.style.cssText='border:1px solid #fca5a5;border-radius:6px;margin-bottom:.8rem;background:#fff5f5';
+  const summary=document.createElement('summary');
+  summary.style.cssText='padding:.45rem .7rem;list-style:none;font-weight:600;font-size:.88rem;color:var(--red,#dc2626);cursor:pointer';
+  summary.innerHTML=`⚠ Aktive Ausschluss-Verletzungen (${viols.length})`;
+  details.appendChild(summary);
+
+  const body=document.createElement('div');
+  body.style.cssText='padding:.4rem .7rem .6rem';
+  const hint=document.createElement('p');
+  hint.style.cssText='font-size:.76rem;color:var(--muted);margin:0 0 .4rem';
+  hint.textContent='Diese Personen sollen NICHT in derselben Klasse sein. Namen sind klickbar → scrollt zur Person.';
+  body.appendChild(hint);
+
+  viols.forEach(({a,b})=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin:.2rem 0;'
+                     +'padding:.25rem .35rem;background:#fff;border-radius:4px;border:1px solid #fca5a5;font-size:.83rem';
+    const makeLink=p=>{
+      const btn=document.createElement('button');
+      btn.className='ni-link';
+      btn.style.fontWeight='600'; btn.style.fontSize='.83rem';
+      btn.textContent=displayName(p);
+      btn.title=`In ${klasseName(p.group)} – klicken zum Scrollen`;
+      btn.onclick=()=>scrollToPerson(p.id);
+      return btn;
+    };
+    row.appendChild(makeLink(a));
+    const sep=document.createElement('span'); sep.textContent='↔'; sep.style.color='#94a3b8';
+    row.appendChild(sep);
+    row.appendChild(makeLink(b));
+    const kl=document.createElement('span');
+    kl.style.cssText='font-size:.72rem;color:var(--muted)';
+    kl.textContent=`(beide ${klasseName(a.group)})`;
+    row.appendChild(kl);
+    body.appendChild(row);
+  });
+
+  details.appendChild(body);
+  container.innerHTML=''; container.appendChild(details);
+}
+
+/* ── F1: Namenssuche (Alias → Vollname → Nachname → Vorname → Token → Teilstring) */
+function matchPersonByName(wishStr){
+  if(!wishStr) return undefined;
+  const q = wishStr.toLowerCase().trim();
+  if(!q) return undefined;
+
+  /* 0: Manuell gesetzter Alias hat Vorrang */
+  const aliasId = wishAliases[q];
+  if(aliasId !== undefined) return persons.find(p => p.id === aliasId);
+
+  /* 1: Exakter Vollname */
+  let m = persons.find(p => displayName(p).toLowerCase() === q);
+  if(m) return m;
+
+  /* 2: Nur Nachname */
+  m = persons.find(p => p.name.toLowerCase() === q);
+  if(m) return m;
+
+  /* 3: Nur Vorname */
+  m = persons.find(p => p.vorname.toLowerCase() === q);
+  if(m) return m;
+
+  /* 4: Token-Matching – alle Tokens des Wunsches kommen im Vollnamen vor.
+     Deckt ab: "Herbert Werner" → "Herbert Gerhardt Werner",
+               zweite Vornamen, vertauschte Reihenfolge usw. */
+  const qTokens = q.split(/\s+/).filter(Boolean);
+  if(qTokens.length >= 2){
+    m = persons.find(p => {
+      const nameTokens = displayName(p).toLowerCase().split(/\s+/);
+      return qTokens.every(t => nameTokens.includes(t));
+    });
+    if(m) return m;
+  }
+
+  /* 5: Teilstring (Fallback) */
+  return persons.find(p => displayName(p).toLowerCase().includes(q));
+}
+
+/* ── 1.5 / F1+F2: Per-wish status badge ─────────────────────────────────── */
+function wishBadge(wishText, personGroup){
+  if(!wishText) return '';
+  const target = matchPersonByName(wishText);
+  if(!target)
+    return `<span style="color:#95a5a6;font-size:.78rem">`
+          +`${escHtml(wishText)}: nicht angemeldet</span>`;
+  if(target.group !== null && target.group === personGroup)
+    return `<span style="color:#27ae60;font-size:.78rem">`
+          +`✔ ${escHtml(wishText)}</span>`;
+  const partnerKlasse = (target.group !== null)
+    ? ` – aktuell ${klasseName(target.group)}` : '';
+  return `<span style="color:#e67e22;font-size:.78rem">`
+        +`⏳ ${escHtml(wishText)}${partnerKlasse}</span>`;
+}
+
+/* ── 1.6: NICHTINEIN warning (klickbar → zur Person scrollen) ───────────── */
+function nichtineinWarning(p){
+  if(!p.nichtinein||p.group===null) return '';
+  const norm=p.nichtinein.toLowerCase().trim();
+  const t=persons.find(q=>displayName(q).toLowerCase()===norm);
+  if(!t||t.group!==p.group) return '';
+  return `<div style="color:var(--red,#dc2626);font-size:.78rem;font-weight:600;margin-bottom:.2rem">`
+        +`⚠ Ausschluss-Konflikt: `
+        +`<button class="ni-link" onclick="scrollToPerson(${t.id})" title="Zur Person springen">`
+        +`${escHtml(p.nichtinein)}</button></div>`;
+}
+function scrollToPerson(pid){
+  const card=document.querySelector(`.person[data-id="${pid}"]`);
+  if(!card) return;
+  /* Falls in eingeklappter Group-Details → aufklappen */
+  let el=card.parentElement;
+  while(el){ if(el.tagName==='DETAILS') el.open=true; el=el.parentElement; }
+  card.scrollIntoView({behavior:'smooth',block:'center'});
+  card.classList.add('scroll-highlight');
+  setTimeout(()=>card.classList.remove('scroll-highlight'),3100);
+}
+
+/* ── State ───────────────────────────────────────────────────────────────── */
+
+let persons      = [];
+let tutors       = Array.from({length:5},()=>[{kürzel:'',fächer:''},{kürzel:'',fächer:''},{kürzel:'',fächer:''}]);
+let groups       = [[],[],[],[],[]];
+let maxDEperGroup = 0;
+let totalStudents = 0;
+let lastManualId = null;
+
+/* wishAliases: normalisierter Wunschtext → personId (manuell zugeordnet) */
+let wishAliases = {};
+/* confirmedAbsent: Wunschtexte, die explizit als "nicht angemeldet" bestätigt wurden */
+let confirmedAbsent = new Set();
+/* expandedCards: IDs der aktuell aufgeklappten Schülerkarten */
+const expandedCards = new Set();
+/* activeKlassenSub: aktiver Reiter in der Klassenübersicht ('all' oder '0'–'4') */
+let activeKlassenSub = 'all';
+/* Sortierzustand Klassenübersicht: pro Klasse {key, dir} – dir: 1 asc, -1 desc */
+const klassenansichtSort = {};
+/* Sortierzustand Klassenzuteilung: global für alle Spalten gleich, oder pro Spalte */
+let zuteilungSortKey = 'default'; /* 'default' = Originalreihenfolge */
+let zuteilungSortDir = 1;
+
+/* ── Rendering ───────────────────────────────────────────────────────────── */
+
+function renderGroups(){
+  const container=document.getElementById('groupsContainer');
+  container.innerHTML='';
+  if(!persons.length){
+    container.innerHTML='<p style="color:#7f8c8d;font-size:.85rem">Keine Personen geladen.</p>';
+    return;
+  }
+  groups.forEach((g,i)=>{
+    /* Stat-Badges für die Zusammenfassung */
+    const deCnt=g.filter(id=>{const p=persons.find(x=>x.id===id);
+      return p&&(['D','E'].includes(p.av)||['D','E'].includes(p.sv));}).length;
+    const fbCnt=g.filter(id=>{const p=persons.find(x=>x.id===id);return p&&hasFoerder(p);}).length;
+    const wCnt=g.filter(id=>{const p=persons.find(x=>x.id===id);
+      if(!p) return false;
+      return [p.erstwunsch,p.zweitwu].some(w=>{
+        if(!w) return false; const t=matchPersonByName(w); return t&&t.group===i;
+      });}).length;
+
+    const details=document.createElement('details');
+    details.className='group-details';
+    details.open=true;
+    details.dataset.group=i;
+
+    /* Summary ─────────────────────────────────────────────────────── */
+    const summary=document.createElement('summary');
+    let badges='';
+    if(deCnt) badges+=`<span style="font-size:.7rem;background:#e67e22;color:#fff;border-radius:3px;padding:.05rem .3rem">D/E:${deCnt}</span>`;
+    if(fbCnt) badges+=`<span style="font-size:.7rem;background:#e74c3c;color:#fff;border-radius:3px;padding:.05rem .3rem;margin-left:.2rem">FB:${fbCnt}</span>`;
+    if(wCnt)  badges+=`<span style="font-size:.7rem;background:#27ae60;color:#fff;border-radius:3px;padding:.05rem .3rem;margin-left:.2rem">✔${wCnt}</span>`;
+    /* Kompakte Tutoren-Kürzel (nur Kürzel, ohne Fächer – Platzgründe) */
+    const tutorShort=(tutors[i]||[]).filter(t=>t.kürzel&&t.kürzel.trim())
+      .map(t=>escHtml(t.kürzel.trim())).join(', ');
+    summary.innerHTML=`<span style="font-weight:bold">${klasseName(i)}</span>`
+      +`<span style="font-size:.8rem;color:#555;margin-left:.3rem">${g.length}&thinsp;SuS</span>`
+      +(tutorShort
+        ? `<span style="font-size:.72rem;color:#2563eb;margin-left:.4rem" title="Tutoren">👤 ${tutorShort}</span>`
+        : `<span style="font-size:.72rem;color:#94a3b8;margin-left:.4rem;font-style:italic">kein Tutor</span>`)
+      +`<span style="margin-left:.4rem;display:flex;gap:.15rem;align-items:center">${badges}</span>`;
+    details.appendChild(summary);
+
+    /* Drop-Zone ────────────────────────────────────────────────────── */
+    const groupDiv=document.createElement('div');
+    groupDiv.className='group';
+    groupDiv.dataset.group=i;
+
+    g.forEach(pid=>{
+      const p=persons.find(x=>x.id===pid); if(!p) return;
+      const card=document.createElement('div');
+      card.className='person'+(p.locked?' locked':'');
+      card.draggable=true;
+      card.dataset.id=p.id;
+
+      const hasFB=hasFoerder(p);
+      const avClass=gradeClass(p.av), svClass=gradeClass(p.sv);
+      const avOpts=['','A','B','C','D','E'].map(v=>`<option value="${v}"${p.av===v?' selected':''}>${v||'–'}</option>`).join('');
+      const svOpts=['','A','B','C','D','E'].map(v=>`<option value="${v}"${p.sv===v?' selected':''}>${v||'–'}</option>`).join('');
+      const classOpts=[0,1,2,3,4].map(gi=>`<option value="${gi}"${gi===p.group?' selected':''}>5.${gi+1}</option>`).join('');
+      const tags=foerderTags(p);
+      const w1=wishBadge(p.erstwunsch,p.group);
+      const w2=wishBadge(p.zweitwu,p.group);
+      const niWarn=nichtineinWarning(p);
+
+      card.innerHTML=`
+        <!-- Kompakte Kopfzeile ──────────────────────────────────── -->
+        <div style="display:flex;align-items:flex-start;gap:.3rem;width:100%;min-width:0">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:.25rem;flex-wrap:nowrap;overflow:hidden">
+              <strong style="font-size:.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                ${escHtml(displayName(p))}</strong>
+              ${genderIcon(p)}
+              ${p.locked?'<span style="font-size:.72rem" title="Fixiert">🔒</span>':''}
+              ${hasFB?'<span style="color:#c0392b;font-size:.75rem;font-weight:bold" title="Förderbedarf">●FB</span>':''}
+            </div>
+            <div style="display:flex;align-items:center;gap:.3rem;margin-top:.15rem;flex-wrap:nowrap">
+              ${topfBadge(p.topf)}
+              <span style="font-size:.75rem;color:#7f8c8d">AV</span>
+              <select class="av-sel ${avClass}" data-pid="${p.id}"
+                      style="font-size:.75rem;border:1px solid #ccc;border-radius:2px;padding:0 .1rem">${avOpts}</select>
+              <span style="font-size:.75rem;color:#7f8c8d">SV</span>
+              <select class="sv-sel ${svClass}" data-pid="${p.id}"
+                      style="font-size:.75rem;border:1px solid #ccc;border-radius:2px;padding:0 .1rem">${svOpts}</select>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;align-items:stretch">
+            <select class="class-sel" data-pid="${p.id}"
+                    style="font-size:.75rem;border:1px solid #bdc3c7;border-radius:3px;
+                           padding:.12rem .2rem;color:#2c3e50;cursor:pointer;background:#f8f9fa">
+              ${classOpts}
+            </select>
+            <button class="btn lockBtn" style="font-size:.72rem;padding:.12rem .35rem">
+              ${p.locked?'Entsperren':'Fixieren'}
+            </button>
+          </div>
+        </div>
+        <!-- Details – immer sichtbar ────────────────────────────── -->
+        <div class="card-details">
+          ${niWarn}
+          ${tags?`<div style="margin-bottom:.2rem">${tags}</div>`:''}
+          ${w1||w2?`<div style="font-size:.82rem;line-height:1.7">${w1}${w1&&w2?'<br>':''}${w2}</div>`:''}
+          <input class="notiz-inp" type="text" value="${escHtml(p.notiz||'')}"
+                 placeholder="Notiz…" data-pid="${p.id}"
+                 style="width:100%;box-sizing:border-box;padding:.2rem .3rem;border:1px solid #ddd;
+                        border-radius:3px;font-size:.82rem;margin-top:.2rem">
+          <div style="display:flex;gap:.2rem;margin-top:.25rem">
+            <button class="btn editBtn" style="font-size:.75rem;padding:.15rem .4rem;background:#27ae60">Bearbeiten</button>
+            <button class="btn delBtn"  style="font-size:.75rem;padding:.15rem .4rem;background:#e74c3c">Entfernen</button>
+          </div>
+        </div>`;
+
+      groupDiv.appendChild(card);
+    });
+
+    details.appendChild(groupDiv);
+    container.appendChild(details);
+  });
+
+  attachDrag();
+  attachLocks();
+  attachEditDelete();
+  attachInlineEdits();
+  attachClassDropdowns();
+  /* Farb-Klassen auf AV/SV-Selects sofort anwenden */
+  document.querySelectorAll('.av-sel,.sv-sel').forEach(applyGradeStyle);
+  const psq=document.getElementById('personSearch');
+  if(psq&&psq.value.trim()) filterPersonSearch(psq.value);
+  scheduleAutoSave();
+}
+
+/* ── Klassen-Dropdown auf Schülerkarte ───────────────────────────────────── */
+function attachClassDropdowns(){
+  document.querySelectorAll('.class-sel').forEach(sel=>{
+    sel.onchange=()=>{
+      const pid=+sel.dataset.pid;
+      const newG=+sel.value;
+      const p=persons.find(x=>x.id===pid);
+      if(!p||p.group===newG) return;
+      if(p.group!==null) groups[p.group]=groups[p.group].filter(id=>id!==pid);
+      groups[newG].push(pid);
+      p.group=newG;
+      renderGroups(); updateStats();
+    };
+    sel.ondragstart=e=>e.stopPropagation();
+  });
+}
+
+
+function renderTutors(){
+  const tbody=document.querySelector('#tutorTable tbody');
+  if(!tbody) return; /* Panel entfernt – kein Fehler */
+  const SEP='border-top:2px solid #95a5a6';
+  for(let i=0;i<5;i++){
+    for(let j=0;j<3;j++){
+      const t=tutors[i][j];
+      const tr=document.createElement('tr');
+      let cells='';
+      if(j===0) cells=`<td rowspan="3" style="vertical-align:middle;${SEP}">` + klasseName(i) + `</td>`;
+      cells+=`<td style="${j===0?SEP:''}">${t.kürzel||'&mdash;'}</td>`
+            +`<td style="${j===0?SEP:''}">${t.fächer||'&mdash;'}</td>`;
+      tr.innerHTML=cells;
+      tbody.appendChild(tr);
+    }
+  }
+}
+
+function updateStats(){
+  const el=document.getElementById('stats');
+  if(!persons.length){
+    el.innerHTML='<p style="color:#7f8c8d">Keine Daten geladen.</p>'; return;
+  }
+
+  const G=5;
+
+  /* 5.1: Topf distribution per group */
+  const topfRows=[];
+  for(let t=1;t<=5;t++){
+    const counts=groups.map(g=>g.filter(id=>persons.find(x=>x.id===id)?.topf===t).length);
+    topfRows.push(`<tr><td>Topf ${t}</td>${counts.map(c=>`<td>${c}</td>`).join('')}</tr>`);
+  }
+
+  /* 5.2: Gender per group */
+  const female=groups.map(g=>g.filter(id=>persons.find(x=>x.id===id)?.geschlecht==='weiblich').length);
+  const male  =groups.map(g=>g.filter(id=>persons.find(x=>x.id===id)?.geschlecht==='männlich').length);
+
+  /* 5.3: D/E count vs cap */
+  const deCounts=groups.map(g=>g.filter(id=>{
+    const p=persons.find(x=>x.id===id);
+    return p&&(['D','E'].includes(p.av)||['D','E'].includes(p.sv));
+  }).length);
+  const deOver=deCounts.some(c=>c>maxDEperGroup);
+
+  /* 5.4: Wish fulfillment */
+  const wishPairs=computeWishPairs();
+  const wFulfilled=wishPairs.filter(pr=>
+    persons.find(x=>x.id===pr.i)?.group===persons.find(x=>x.id===pr.j)?.group).length;
+
+  /* 5.5: AV/SV distribution per group (informational) */
+  const avRows=['A','B','C','D','E'].map(v=>{
+    const counts=groups.map(g=>g.filter(id=>persons.find(x=>x.id===id)?.av===v).length);
+    return `<tr><td>AV ${v}</td>${counts.map(c=>`<td>${c}</td>`).join('')}</tr>`;
+  }).join('');
+  const svRows=['A','B','C','D','E'].map(v=>{
+    const counts=groups.map(g=>g.filter(id=>persons.find(x=>x.id===id)?.sv===v).length);
+    return `<tr><td>SV ${v}</td>${counts.map(c=>`<td>${c}</td>`).join('')}</tr>`;
+  }).join('');
+
+  /* 5.6: Active NICHTINEIN violations */
+  const nameMapS={};
+  persons.forEach(p=>{ nameMapS[displayName(p).toLowerCase()]=p.id; });
+  let exclViols=0;
+  persons.forEach(p=>{
+    if(!p.nichtinein||p.group===null) return;
+    const jId=nameMapS[p.nichtinein.toLowerCase().trim()];
+    if(jId===undefined) return;
+    const pJ=persons.find(x=>x.id===jId);
+    if(pJ&&pJ.group===p.group) exclViols++;
+  });
+  exclViols=Math.ceil(exclViols/2);
+
+  /* 5.8: AV/SV coverage */
+  const rated=persons.filter(p=>p.av||p.sv).length;
+
+  const thG=`<th></th>${[0,1,2,3,4].map(i=>`<th>5.${i+1}</th>`).join('')}`;
+  const tStyle='width:100%;border-collapse:collapse;margin-bottom:.5rem;font-size:.82rem';
+  const cStyle='padding:.15rem .3rem;border:1px solid #ddd;text-align:center';
+  const hStyle='padding:.15rem .3rem;border:1px solid #ddd;background:#eaeaea;text-align:center';
+
+  el.innerHTML=`
+    <!-- 5.6 exclusion violations -->
+    ${exclViols>0
+      ? `<p style="color:#e74c3c;font-weight:bold">⚠ Aktive Ausschluss-Verletzungen: ${exclViols}</p>`
+      : `<p style="color:#27ae60;font-size:.85rem">✔ Keine Ausschluss-Verletzungen</p>`}
+
+    <!-- 5.8 AV/SV coverage -->
+    <p style="color:#7f8c8d;font-size:.82rem;margin:.2rem 0">
+      AV/SV bewertet: ${rated}/${persons.length}
+      ${rated===0?'&nbsp;<em>(Noten noch nicht eingetragen)</em>':''}
+    </p>
+
+    <!-- 5.1 Topf distribution -->
+    <details open style="margin-top:.5rem">
+      <summary style="cursor:pointer;font-weight:bold;font-size:.85rem">Topf-Verteilung</summary>
+      <table style="${tStyle}">
+        <thead><tr>${thG}</tr></thead>
+        <tbody>${topfRows.join('')}</tbody>
+      </table>
+    </details>
+
+    <!-- 5.2 Gender -->
+    <details open style="margin-top:.4rem">
+      <summary style="cursor:pointer;font-weight:bold;font-size:.85rem">Geschlecht</summary>
+      <table style="${tStyle}">
+        <thead><tr>${thG}</tr></thead>
+        <tbody>
+          <tr><td style="${cStyle}">weiblich</td>${female.map(c=>`<td style="${cStyle}">${c}</td>`).join('')}</tr>
+          <tr><td style="${cStyle}">männlich</td>${male.map(c=>`<td style="${cStyle}">${c}</td>`).join('')}</tr>
+        </tbody>
+      </table>
+    </details>
+
+    <!-- 5.3 D/E cap -->
+    <details open style="margin-top:.4rem">
+      <summary style="cursor:pointer;font-weight:bold;font-size:.85rem">
+        D/E-Verteilung (max ${maxDEperGroup}/Klasse)
+        ${deOver?'<span style="color:#e74c3c"> ⚠ überschritten</span>':''}
+      </summary>
+      <table style="${tStyle}">
+        <thead><tr>${thG}</tr></thead>
+        <tbody>
+          <tr><td style="${cStyle}">D/E</td>${deCounts.map(c=>`<td style="${cStyle};${c>maxDEperGroup?'color:#e74c3c;font-weight:bold':''}">${c}</td>`).join('')}</tr>
+        </tbody>
+      </table>
+    </details>
+
+    <!-- 5.4 Wish fulfillment -->
+    <details open style="margin-top:.4rem">
+      <summary style="cursor:pointer;font-weight:bold;font-size:.85rem">Wünsche</summary>
+      <p style="font-size:.85rem;margin:.3rem 0">
+        Erfüllt: <strong>${wFulfilled}</strong> / ${wishPairs.length} Wunschpaare
+      </p>
+    </details>
+
+    <!-- 5.5 AV/SV distribution (informativ) -->
+    <details style="margin-top:.4rem">
+      <summary style="cursor:pointer;font-weight:bold;font-size:.85rem">AV/SV-Verteilung (informativ)</summary>
+      <table style="${tStyle}">
+        <thead><tr>${thG}</tr></thead>
+        <tbody>${avRows}${svRows}</tbody>
+      </table>
+    </details>`;
+
+  renderUnmatchedWishes();
+  renderAliasManager();
+  renderExclusionViolations();
+}
+
+/* ── Nicht erkannte Wunschnamen – Vorschläge per Präfix-Token-Matching ────── */
+function suggestMatches(wishStr){
+  const q=wishStr.toLowerCase().trim();
+  const qTokens=q.split(/\s+/).filter(Boolean);
+  if(!qTokens.length) return [];
+  return persons
+    .map(p=>{
+      const nTok=displayName(p).toLowerCase().split(/\s+/);
+      let score=0;
+      for(const qt of qTokens){
+        /* Präfix der Länge max(3, len-1) → toleriert 1-2 Buchstaben Abweichung am Ende */
+        const pfx=qt.slice(0, Math.max(3, qt.length-1));
+        for(const nt of nTok){
+          if(nt.startsWith(pfx)) score+=2;
+          else if(nt.length>=3&&pfx.startsWith(nt.slice(0,Math.max(3,nt.length-1)))) score+=1;
+        }
+      }
+      return {p, score};
+    })
+    .filter(x=>x.score>0)
+    .sort((a,b)=>b.score-a.score)
+    .slice(0,3)
+    .map(x=>x.p);
+}
+
+/* ── Nicht erkannte Wunschnamen – Zuordnungsliste ────────────────────────── */
+function renderUnmatchedWishes(){
+  const container=document.getElementById('unmatchedWishes');
+  if(!container||!persons.length){ if(container) container.innerHTML=''; return; }
+
+  /* Alle Wunschtexte sammeln, die keiner Person zugeordnet werden konnten */
+  const unmatched=new Map(); /* key(normalized) → {original, by: Set<name>} */
+  persons.forEach(p=>{
+    [p.erstwunsch, p.zweitwu].filter(w=>w).forEach(w=>{
+      const key=w.toLowerCase().trim();
+      if(confirmedAbsent.has(key)) return;
+      if(!matchPersonByName(w)){
+        if(!unmatched.has(key)) unmatched.set(key,{original:w, by:new Set()});
+        unmatched.get(key).by.add(displayName(p));
+      }
+    });
+  });
+
+  container.innerHTML='';
+  if(!unmatched.size) return;
+
+  const details=document.createElement('details');
+  details.open=true;
+  details.style.cssText='border:1px solid #f39c12;border-radius:4px;margin-bottom:.8rem;background:#fff8e1';
+
+  const summary=document.createElement('summary');
+  summary.style.cssText='cursor:pointer;font-weight:bold;color:#d35400;font-size:.9rem;'
+                        +'padding:.5rem .75rem;list-style:none;display:flex;'
+                        +'justify-content:space-between;align-items:center';
+  summary.innerHTML=`<span>⚠ Nicht erkannte Wunschnamen (${unmatched.size})</span>`
+                   +`<span style="font-size:.75rem;font-weight:normal;color:#7f8c8d">▲ einklappen</span>`;
+  details.addEventListener('toggle',()=>{
+    summary.querySelector('span:last-child').textContent=
+      details.open?'▲ einklappen':'▼ ausklappen';
+  });
+  details.appendChild(summary);
+
+  const wrap=document.createElement('div');
+  wrap.style.cssText='padding:.4rem .75rem .75rem';
+
+  const hint=document.createElement('p');
+  hint.style.cssText='font-size:.78rem;color:#7f8c8d;margin:0 0 .5rem 0';
+  hint.textContent='Bitte der richtigen Person zuordnen oder als „nicht angemeldet" bestätigen.';
+  wrap.appendChild(hint);
+
+  unmatched.forEach(({original, by}, key)=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:flex-start;flex-wrap:wrap;gap:.35rem;'
+                     +'margin:.25rem 0;padding:.4rem;background:#fff;'
+                     +'border-radius:3px;border:1px solid #f0d9a0';
+
+    /* Wunschname + Wer hat diesen Wunsch */
+    const top=document.createElement('div');
+    top.style.cssText='display:flex;gap:.5rem;align-items:center;width:100%';
+    const nameEl=document.createElement('span');
+    nameEl.style.cssText='font-weight:bold;font-size:.85rem;min-width:120px';
+    nameEl.textContent=original;
+    top.appendChild(nameEl);
+    const byEl=document.createElement('span');
+    byEl.style.cssText='font-size:.75rem;color:#7f8c8d;flex:1';
+    byEl.textContent=`(Wunsch von: ${[...by].join(', ')})`;
+    top.appendChild(byEl);
+    row.appendChild(top);
+
+    /* Vorschläge (Schnellzuordnung) */
+    const suggestions=suggestMatches(original);
+    if(suggestions.length){
+      const suggRow=document.createElement('div');
+      suggRow.style.cssText='display:flex;gap:.3rem;align-items:center;flex-wrap:wrap;width:100%';
+      const lbl=document.createElement('span');
+      lbl.style.cssText='font-size:.75rem;color:#7f8c8d;white-space:nowrap';
+      lbl.textContent='Vorschläge:';
+      suggRow.appendChild(lbl);
+      suggestions.forEach(sp=>{
+        const sb=document.createElement('button');
+        sb.className='btn';
+        sb.style.cssText='font-size:.75rem;padding:.15rem .45rem;background:#e67e22;margin:0';
+        sb.textContent=displayName(sp);
+        sb.title=`Topf ${sp.topf} · ${sp.geschlecht}`;
+        sb.onclick=()=>{ wishAliases[key]=sp.id; renderGroups(); updateStats(); };
+        suggRow.appendChild(sb);
+      });
+      row.appendChild(suggRow);
+    }
+
+    /* Dropdown mit Suchfilter (Nachname, Vorname) */
+    const bottom=document.createElement('div');
+    bottom.style.cssText='display:flex;gap:.35rem;align-items:flex-end;flex-wrap:wrap;width:100%';
+
+    const selWrap=document.createElement('div');
+    selWrap.style.cssText='display:flex;flex-direction:column;gap:.15rem;flex:0 1 210px';
+
+    const selFilter=document.createElement('input');
+    selFilter.type='text';
+    selFilter.placeholder='🔍 Name filtern…';
+    selFilter.style.cssText='font-size:.75rem;padding:.18rem .3rem;border:1px solid #ccc;border-radius:3px';
+
+    const sel=document.createElement('select');
+    sel.style.cssText='font-size:.82rem;padding:.2rem .3rem;border:1px solid #ccc;border-radius:3px';
+
+    const sortedP=[...persons].sort((a,b)=>a.name.localeCompare(b.name,'de')||a.vorname.localeCompare(b.vorname,'de'));
+    const buildOpts=q=>{
+      const fq=q.toLowerCase();
+      sel.innerHTML='<option value="">– Nachname, Vorname –</option>'
+        +sortedP.filter(p=>!fq||(p.name+p.vorname).toLowerCase().includes(fq))
+          .map(p=>`<option value="${p.id}">${escHtml(p.name+', '+p.vorname)}</option>`)
+          .join('');
+    };
+    buildOpts('');
+    selFilter.addEventListener('input',()=>buildOpts(selFilter.value));
+
+    selWrap.appendChild(selFilter);
+    selWrap.appendChild(sel);
+    bottom.appendChild(selWrap);
+
+    const assignBtn=document.createElement('button');
+    assignBtn.className='btn';
+    assignBtn.style.cssText='font-size:.78rem;padding:.2rem .5rem;background:#27ae60;margin:0';
+    assignBtn.textContent='Zuordnen';
+    assignBtn.onclick=()=>{
+      if(!sel.value) return;
+      wishAliases[key]=+sel.value; renderGroups(); updateStats();
+    };
+    bottom.appendChild(assignBtn);
+
+    const absentBtn=document.createElement('button');
+    absentBtn.className='btn';
+    absentBtn.style.cssText='font-size:.78rem;padding:.2rem .5rem;background:#95a5a6;margin:0';
+    absentBtn.textContent='Nicht angemeldet ✓';
+    absentBtn.onclick=()=>{ confirmedAbsent.add(key); renderGroups(); updateStats(); };
+    bottom.appendChild(absentBtn);
+
+    row.appendChild(bottom);
+    wrap.appendChild(row);
+  });
+
+  details.appendChild(wrap);
+  container.appendChild(details);
+}
+
+/* ── Hilfe-Modal ─────────────────────────────────────────────────────────── */
+function showHelp(){
+  if(document.getElementById('helpModal')) return;
+  const modal=document.createElement('div');
+  modal.id='helpModal';
+  modal.innerHTML=`
+    <div class="help-body">
+      <button onclick="document.getElementById('helpModal').remove()"
+              style="position:absolute;top:.8rem;right:.8rem;background:none;border:none;
+                     font-size:1.2rem;cursor:pointer;color:var(--muted,#64748b)">✕</button>
+      <h2 style="margin:0 0 1rem;font-size:1rem;font-weight:700">⚡ KlassenPlaner – Schnellübersicht</h2>
+
+      <h3 style="font-size:.85rem;margin:.8rem 0 .3rem;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.04em">Workflow</h3>
+      <ol style="font-size:.85rem;line-height:1.8;padding-left:1.3rem;margin:0">
+        <li><strong>Personen-CSV einlesen</strong> – Schüler/innen laden</li>
+        <li><strong>Struktur optimieren</strong> – Geschlechterbalance, Topf-Verteilung, Förderbedarf</li>
+        <li><strong>Wünsche optimieren</strong> – Wunschpartner berücksichtigen (mit Bestätigungsdialog)</li>
+        <li><strong>⇄ Klassenzuteilung</strong> – Feinabstimmung per Drag &amp; Drop (Kanban)</li>
+        <li><strong>Vollexport</strong> – Sitzung als JSON dauerhaft speichern</li>
+      </ol>
+
+      <h3 style="font-size:.85rem;margin:1rem 0 .3rem;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.04em">Farbkodierung</h3>
+      <table style="font-size:.82rem;margin:0">
+        <tr><td><span class="badge-t5">T5</span> <span class="badge-t4">T4</span></td><td>Topf-Herkunft – rot/gelb = erhöhte Heterogenität</td></tr>
+        <tr><td><span class="badge-e">E</span> <span class="badge-d">D</span></td><td>AV/SV-Noten – Ausgangs-/Sozialverhalten</td></tr>
+        <tr><td style="font-size:.85rem">✔ grün</td><td>Wunschpartner in gleicher Klasse</td></tr>
+        <tr><td style="font-size:.85rem">⏳ orange</td><td>Wunschpartner in anderer Klasse</td></tr>
+        <tr><td style="font-size:.85rem">●FB</td><td>Förderbedarf vorhanden</td></tr>
+      </table>
+
+      <h3 style="font-size:.85rem;margin:1rem 0 .3rem;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.04em">CSV-Format (Personen)</h3>
+      <code style="font-size:.76rem;background:#f8fafc;display:block;padding:.4rem .5rem;border-radius:5px;border:1px solid var(--border,#e2e8f0)">
+        Nachname, Vorname, Topf, Geschlecht, AV, SV,<br>
+        Erstwunsch, Zweitwunsch, Nichtinein, Notiz, [Förderbedarf…]
+      </code>
+      <p style="font-size:.78rem;color:var(--muted,#64748b);margin:.35rem 0 0">
+        Spaltenreihenfolge ist egal · Groß-/Kleinschreibung egal · gängige Synonyme werden erkannt.
+        Trennzeichen wird automatisch erkannt (Semikolon = deutscher Excel-Standard).
+        AV/SV fehlen? → werden automatisch auf „C" gesetzt.
+      </p>
+
+      <h3 style="font-size:.85rem;margin:1rem 0 .3rem;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.04em">Tipps</h3>
+      <ul style="font-size:.85rem;line-height:1.8;padding-left:1.3rem;margin:0">
+        <li>„Fixieren" sperrt eine Person in ihrer Klasse (Schloss-Symbol)</li>
+        <li>Drag &amp; Drop im Zuteilungs-Tab – volle Breite, alle Klassen nebeneinander</li>
+        <li>Ausschluss-Konflikt (⚠) ist klickbar → scrollt zur betroffenen Person</li>
+        <li>Sitzung wird <strong>automatisch im Browser gespeichert</strong> – erscheint als Banner beim nächsten Öffnen</li>
+        <li>Vollexport/Vollimport für dauerhafte JSON-Sicherung</li>
+      </ul>
+    </div>`;
+  modal.onclick=e=>{ if(e.target===modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
+/* ── Auto-Save (localStorage) ────────────────────────────────────────────── */
+const AS_KEY='kbplaner_v3';
+function scheduleAutoSave(){
+  clearTimeout(scheduleAutoSave._t);
+  scheduleAutoSave._t=setTimeout(()=>{
+    try{
+      const st={v:3,persons,tutors,wishAliases,confirmedAbsent:[...confirmedAbsent]};
+      localStorage.setItem(AS_KEY,JSON.stringify(st));
+    }catch(e){ console.warn('Autosave fehlgeschlagen:',e); }
+  },1500);
+}
+
+/* Recovery-Banner beim Seitenstart */
+(function checkAutoSave(){
+  try{
+    const raw=localStorage.getItem(AS_KEY);
+    if(!raw) return;
+    const st=JSON.parse(raw);
+    if(!st?.persons?.length) return;
+    const d=new Date(st._ts||0);
+    const ts=st._ts?d.toLocaleString('de'):'(Zeitstempel unbekannt)';
+    const banner=document.createElement('div');
+    banner.id='recoverBanner';
+    banner.innerHTML=`<span>💾 Letzte Sitzung gefunden: <strong>${st.persons.length} Personen</strong></span>`
+      +`<div style="display:flex;gap:.4rem">`
+      +`<button id="recoverBtn" style="background:var(--green,#16a34a);color:#fff;border:none;border-radius:4px;padding:.28rem .6rem;cursor:pointer;font-size:.8rem">Wiederherstellen</button>`
+      +`<button onclick="document.getElementById('recoverBanner')?.remove()" style="background:#475569;color:#fff;border:none;border-radius:4px;padding:.28rem .6rem;cursor:pointer;font-size:.8rem">Verwerfen</button>`
+      +`</div>`;
+    document.body.appendChild(banner);
+    document.getElementById('recoverBtn').onclick=()=>{
+      persons=st.persons; totalStudents=persons.length;
+      tutors=st.tutors||Array.from({length:5},()=>[{kürzel:'',fächer:''},{kürzel:'',fächer:''},{kürzel:'',fächer:''}]);
+      wishAliases=st.wishAliases||{};
+      confirmedAbsent=new Set(st.confirmedAbsent||[]);
+      groups=[[],[],[],[],[]];
+      persons.filter(p=>p.group!==null).forEach(p=>groups[p.group].push(p.id));
+      const tot=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
+      maxDEperGroup=totalStudents>0?ceilDiv(tot,5):0;
+      initTutorInputs(); renderGroups(); renderTutors(); updateStats();
+      document.getElementById('recoverBanner')?.remove();
+      document.getElementById('msgArea').innerHTML='<p class="info">✔ Sitzung wiederhergestellt.</p>';
+    };
+  }catch(e){}
+})();
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.onclick=()=>{
+    const tab=btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-main').style.display       = tab==='main'       ? '' : 'none';
+    document.getElementById('tab-zuteilung').style.display  = tab==='zuteilung'  ? '' : 'none';
+    document.getElementById('tab-klassen').style.display    = tab==='klassen'    ? '' : 'none';
+    if(tab==='klassen')   renderKlassenansicht();
+    if(tab==='zuteilung') renderZuteilung();
+  };
+});
+
+/* ── Klassenzuteilung: Kanban-Board für Drag & Drop ─────────────────────── */
+/* ── Sortierung Klassenzuteilung (global, gilt für alle Spalten gleich) ──── */
+function sortGroupForZuteilung(ids){
+  if(zuteilungSortKey==='default') return ids;
+  const withP=ids.map(id=>({id,p:persons.find(x=>x.id===id)})).filter(x=>x.p);
+  withP.sort((a,b)=>{
+    const va=sortCompareValue(a.p,zuteilungSortKey), vb=sortCompareValue(b.p,zuteilungSortKey);
+    if(va<vb) return -1*zuteilungSortDir; if(va>vb) return 1*zuteilungSortDir; return 0;
+  });
+  return withP.map(x=>x.id);
+}
+
+/* ── Klasse als „Geplant" fixieren (Bulk-Lock aller Personen) ────────────── */
+function isGroupFullyLocked(g){
+  const ids=groups[g]||[];
+  if(!ids.length) return false;
+  return ids.every(id=>{ const p=persons.find(x=>x.id===id); return p&&p.locked; });
+}
+function lockAllInGroup(g){
+  (groups[g]||[]).forEach(id=>{ const p=persons.find(x=>x.id===id); if(p) p.locked=true; });
+  renderGroups(); renderZuteilung(); updateStats();
+}
+function unlockAllInGroup(g){
+  (groups[g]||[]).forEach(id=>{ const p=persons.find(x=>x.id===id); if(p) p.locked=false; });
+  renderGroups(); renderZuteilung(); updateStats();
+}
+
+function renderZuteilung(){
+  const board=document.getElementById('zuteilungBoard');
+  if(!board) return;
+  board.innerHTML='';
+  if(!persons.length){
+    board.innerHTML='<p style="color:#7f8c8d;padding:.5rem">Keine Personen geladen.</p>';
+    return;
+  }
+  groups.forEach((g,i)=>{
+    const sortedG=sortGroupForZuteilung(g);
+    const deCnt=g.filter(id=>{const p=persons.find(x=>x.id===id);
+      return p&&(['D','E'].includes(p.av)||['D','E'].includes(p.sv));}).length;
+    const fbCnt=g.filter(id=>{const p=persons.find(x=>x.id===id);return p&&hasFoerder(p);}).length;
+
+    const col=document.createElement('div');
+    col.className='zuteil-col';
+
+    /* Header ──────────────────────────────────────────────────────────── */
+    const hdr=document.createElement('div');
+    hdr.className='zuteil-header';
+    let hBadges='';
+    if(deCnt) hBadges+=`<span style="font-size:.68rem;background:#e67e22;border-radius:3px;padding:.05rem .25rem;margin-left:.3rem">D/E:${deCnt}</span>`;
+    if(fbCnt) hBadges+=`<span style="font-size:.68rem;background:#e74c3c;border-radius:3px;padding:.05rem .25rem;margin-left:.2rem">FB:${fbCnt}</span>`;
+    /* Hellere Export-Buttons mit gutem Kontrast auf dunklem Header */
+    const exBtn='font-size:.64rem;padding:.12rem .42rem;border:none;border-radius:4px;cursor:pointer;'
+               +'color:#fff;font-weight:700;margin:0;box-shadow:0 1px 2px rgba(0,0,0,.25);';
+    hdr.innerHTML=`<div style="font-weight:700">${klasseName(i).replace('Klasse ','')} · ${g.length} SuS${hBadges}</div>`
+      +tutorHeaderEditor(i)
+      +`<div style="display:flex;gap:.25rem;margin-top:.3rem;justify-content:center">`
+      +`<button style="${exBtn}background:#38bdf8" onclick="exportKlasseCSV(${i})" title="Klasse als CSV (inkl. Tutor)">CSV</button>`
+      +`<button style="${exBtn}background:#c084fc" onclick="exportKlasseWord(${i})" title="Klasse als Word (inkl. Tutor)">Word</button>`
+      +`<button style="${exBtn}background:#fb7185" onclick="exportKlassePDF(${i})" title="Klasse als PDF (inkl. Tutor)">PDF</button>`
+      +`</div>`
+      +`<div style="margin-top:.25rem">`
+      +(isGroupFullyLocked(i)
+        ? `<button style="${exBtn}background:#16a34a;width:100%" onclick="unlockAllInGroup(${i})" title="Alle Personen dieser Klasse entsperren">✓ Geplant – entsperren</button>`
+        : `<button style="${exBtn}background:#475569;width:100%" onclick="lockAllInGroup(${i})" title="Alle Personen dieser Klasse fixieren (gegen versehentliches Verschieben)">Als geplant fixieren</button>`)
+      +`</div>`;
+    col.appendChild(hdr);
+
+    /* Drop-Zone ──────────────────────────────────────────────────────── */
+    const zone=document.createElement('div');
+    zone.className='group';
+    zone.dataset.group=i;
+
+    sortedG.forEach(pid=>{
+      const p=persons.find(x=>x.id===pid); if(!p) return;
+      const card=document.createElement('div');
+      card.className='zuteil-card person'+(p.locked?' locked':'');
+      card.draggable=true;
+      card.dataset.id=p.id;
+      const isDE=['D','E'].includes(p.av)||['D','E'].includes(p.sv);
+      if(hasFoerder(p)) card.style.borderLeft='3px solid #e74c3c';
+      else if(isDE)     card.style.borderLeft='3px solid #f39c12';
+      card.innerHTML=
+        `<div style="display:flex;align-items:center;gap:.2rem;min-width:0">
+           <span style="flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.83rem">${escHtml(displayName(p))}</span>
+           ${genderIcon(p)}${p.locked?'<span style="font-size:.65rem">🔒</span>':''}
+         </div>
+         <div style="display:flex;gap:.22rem;margin-top:.15rem;flex-wrap:wrap;align-items:center">
+           ${topfBadge(p.topf)}
+           ${avsvBadge(p.av,'AV')} ${avsvBadge(p.sv,'SV')}
+           ${hasFoerder(p)?'<span style="font-size:.68rem;color:var(--red,#dc2626);font-weight:700">FB</span>':''}
+         </div>
+         ${p.notiz?`<div style="font-size:.72rem;color:var(--muted,#64748b);margin-top:.12rem;
+                               font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+                        title="${escHtml(p.notiz)}">${escHtml(p.notiz)}</div>`:''}`;
+      zone.appendChild(card);
+    });
+
+    col.appendChild(zone);
+    board.appendChild(col);
+  });
+
+  attachDrag();
+  attachLocks();
+  bindTutorHeaderInputs();
+}
+
+/* ── Tutoren-Editor im Spalten-Header (ausklappbar) ──────────────────────────
+   Eingeklappt: kompakte Kürzel · Fächer-Liste (oder „+ Tutor zuweisen").
+   Aufgeklappt: 3 editierbare Zeilen (Kürzel + Fächerkürzel). */
+function tutorHeaderEditor(g){
+  const ts=(tutors[g]||[]).filter(t=>t.kürzel&&t.kürzel.trim());
+  const summaryLabel = ts.length
+    ? ts.map(t=>`<strong>${escHtml(t.kürzel.trim())}</strong>${t.fächer?` <span style="opacity:.85">${escHtml(t.fächer.trim())}</span>`:''}`).join(' · ')
+    : `<span style="font-style:italic;opacity:.7">+ Tutor zuweisen</span>`;
+  const iS='width:100%;padding:.12rem .25rem;border:1px solid #cbd5e1;border-radius:3px;'
+          +'font-size:.7rem;box-sizing:border-box;background:#fff;color:#1e293b';
+  let rows='';
+  for(let j=0;j<3;j++){
+    const t=(tutors[g]&&tutors[g][j])||{kürzel:'',fächer:''};
+    rows+=`<div style="display:flex;gap:.2rem;margin-top:.18rem;align-items:center">`
+      +`<span style="font-size:.62rem;opacity:.7;width:.7rem;flex-shrink:0">${j+1}.</span>`
+      +`<input type="text" value="${escHtml(t.kürzel)}" placeholder="Kürzel" `
+      +`style="${iS}flex:0 0 38%" data-thi="${g}" data-thj="${j}" data-thf="kürzel">`
+      +`<input type="text" value="${escHtml(t.fächer)}" placeholder="z.B. De/Ge" `
+      +`style="${iS}flex:1" data-thi="${g}" data-thj="${j}" data-thf="fächer">`
+      +`</div>`;
+  }
+  return `<details class="tutor-head-edit" style="margin-top:.18rem">`
+    +`<summary style="list-style:none;cursor:pointer;font-size:.68rem;font-weight:400;`
+    +`opacity:.92;display:flex;align-items:center;gap:.25rem;justify-content:center;flex-wrap:wrap">`
+    +`<span style="font-size:.6rem">&#9662;</span>`
+    +`<span>${summaryLabel}</span></summary>`
+    +`<div style="margin-top:.25rem;padding:.3rem;background:rgba(255,255,255,.12);border-radius:4px"`
+    +` onclick="event.stopPropagation()">${rows}</div>`
+    +`</details>`;
+}
+
+/* Bindet die Eingabefelder der Header-Tutoren-Editoren */
+function bindTutorHeaderInputs(){
+  document.querySelectorAll('#zuteilungBoard [data-thi]').forEach(inp=>{
+    inp.oninput=()=>{
+      const i=+inp.dataset.thi, j=+inp.dataset.thj, f=inp.dataset.thf;
+      if(!tutors[i][j]) tutors[i][j]={kürzel:'',fächer:''};
+      tutors[i][j][f]=inp.value;
+      scheduleAutoSave();
+    };
+    /* Beim Verlassen des Feldes: kompakte Summary-Zeile dieser Spalte aktualisieren
+       (ohne Board-Neuaufbau, damit Fokus/Aufklappzustand erhalten bleiben) */
+    inp.onchange=()=>{
+      const i=+inp.dataset.thi;
+      const det=inp.closest('.tutor-head-edit');
+      const lbl=det?.querySelector('summary>span:last-child');
+      if(lbl){
+        const ts=(tutors[i]||[]).filter(t=>t.kürzel&&t.kürzel.trim());
+        lbl.innerHTML = ts.length
+          ? ts.map(t=>`<strong>${escHtml(t.kürzel.trim())}</strong>${t.fächer?` <span style="opacity:.85">${escHtml(t.fächer.trim())}</span>`:''}`).join(' · ')
+          : `<span style="font-style:italic;opacity:.7">+ Tutor zuweisen</span>`;
+      }
+      /* Klassenübersicht-Tab ggf. mit aktualisieren, falls dort sichtbar */
+      if(typeof renderKlassenansicht==='function'
+         && document.getElementById('tab-klassen')?.style.display!=='none') renderKlassenansicht();
+      /* Hauptansicht: Tutoren-Kürzel-Anzeige im Klassen-Header direkt aktualisieren
+         (kein renderGroups()-Neuaufbau, um Drag-Zustand/Suchfilter nicht zu stören) */
+      const mainDetails=document.querySelectorAll('#groupsContainer .group-details')[i];
+      const mainSummary=mainDetails?.querySelector('summary');
+      if(mainSummary){
+        const tutorSpan=mainSummary.querySelector('span[title="Tutoren"], span[style*="font-style:italic"]');
+        const ts=(tutors[i]||[]).filter(t=>t.kürzel&&t.kürzel.trim());
+        const newHtml = ts.length
+          ? `<span style="font-size:.72rem;color:#2563eb;margin-left:.4rem" title="Tutoren">👤 ${ts.map(t=>escHtml(t.kürzel.trim())).join(', ')}</span>`
+          : `<span style="font-size:.72rem;color:#94a3b8;margin-left:.4rem;font-style:italic">kein Tutor</span>`;
+        if(tutorSpan) tutorSpan.outerHTML=newHtml;
+      }
+    };
+    /* Verhindert, dass Klick ins Feld das <details> umschaltet */
+    inp.onclick=e=>e.stopPropagation();
+  });
+}
+
+/* ── Suchfunktion – Personenkarten (Panel 2) ─────────────────────────────── */
+function filterPersonSearch(q){
+  const query=q.toLowerCase().trim();
+  document.querySelectorAll('.person[data-id]').forEach(card=>{
+    const pid=+card.dataset.id;
+    const p=persons.find(x=>x.id===pid);
+    if(!p){ card.style.display=''; return; }
+    const hit=!query
+      ||displayName(p).toLowerCase().includes(query)
+      ||(p.notiz||'').toLowerCase().includes(query)
+      ||String(p.topf).includes(query)
+      ||(p.av||'').toLowerCase()===query
+      ||(p.sv||'').toLowerCase()===query;
+    card.style.display=hit?'':'none';
+  });
+}
+document.getElementById('personSearch').addEventListener('input',e=>{
+  filterPersonSearch(e.target.value);
+});
+
+/* ── Suchfunktion – Klassenansicht ───────────────────────────────────────── */
+function filterKlassenansicht(q){
+  const query=q.toLowerCase().trim();
+  document.querySelectorAll('#klassenansichtContainer tbody tr').forEach(tr=>{
+    tr.style.display=(!query||tr.textContent.toLowerCase().includes(query))?'':'none';
+  });
+}
+document.getElementById('klassenSearch').addEventListener('input',e=>{
+  filterKlassenansicht(e.target.value);
+});
+
+/* ── Alias-Verwaltung: zugeordnete Wunschnamen ändern / aufheben ─────────── */
+function renderAliasManager(){
+  const container=document.getElementById('wishAliasManager');
+  if(!container) return;
+  const keys=Object.keys(wishAliases);
+  if(!keys.length){ container.innerHTML=''; return; }
+
+  const details=document.createElement('details');
+  details.style.cssText='border:1px solid #a9cce3;border-radius:4px;margin-bottom:.8rem;background:#eaf4fd';
+
+  const summary=document.createElement('summary');
+  summary.style.cssText='cursor:pointer;font-weight:bold;color:#1a5276;font-size:.88rem;'
+                       +'padding:.45rem .7rem;list-style:none;display:flex;'
+                       +'justify-content:space-between;align-items:center';
+  summary.innerHTML=`<span>&#128279; Zugeordnete Wunschnamen (${keys.length})</span>`
+                   +`<span style="font-size:.73rem;font-weight:normal;color:var(--muted)">▼ aufgeklappt</span>`;
+  details.addEventListener('toggle',()=>{
+    summary.querySelector('span:last-child').textContent=
+      details.open?'▼ aufgeklappt':'▶ einklappen';
+  });
+  details.appendChild(summary);
+
+  const body=document.createElement('div');
+  body.style.cssText='padding:.4rem .7rem .6rem';
+
+  const hint=document.createElement('p');
+  hint.style.cssText='font-size:.76rem;color:#7f8c8d;margin:0 0 .4rem';
+  hint.textContent='Klick auf „Aufheben" entfernt die Zuordnung – der Name erscheint wieder in der Warnliste.';
+  body.appendChild(hint);
+
+  keys.forEach(key=>{
+    const personId=wishAliases[key];
+    const assignedPerson=persons.find(x=>x.id===personId);
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;'
+                     +'padding:.25rem .3rem;margin:.15rem 0;background:#fff;'
+                     +'border-radius:3px;border:1px solid #aed6f1;font-size:.82rem';
+
+    const original=document.createElement('span');
+    original.style.cssText='font-weight:bold;min-width:110px';
+    original.textContent=`„${key}"`;
+    row.appendChild(original);
+
+    const arrow=document.createElement('span');
+    arrow.style.cssText='color:#7f8c8d';
+    arrow.textContent='→';
+    row.appendChild(arrow);
+
+    const name=document.createElement('span');
+    name.style.cssText='flex:1;color:#1a5276';
+    name.textContent=assignedPerson?displayName(assignedPerson):'(Person nicht mehr vorhanden)';
+    row.appendChild(name);
+
+    /* Dropdown zum Ändern der Zuordnung */
+    const sel=document.createElement('select');
+    sel.style.cssText='font-size:.78rem;padding:.15rem .3rem;border:1px solid #ccc;border-radius:3px;flex:0 1 170px';
+    sel.innerHTML='<option value="">– Ändern –</option>'
+      +[...persons]
+        .sort((a,b)=>a.name.localeCompare(b.name,'de')||a.vorname.localeCompare(b.vorname,'de'))
+        .map(p=>`<option value="${p.id}"${p.id===personId?' selected':''}>${escHtml(p.name+', '+p.vorname)}</option>`)
+        .join('');
+    sel.onchange=()=>{
+      if(!sel.value) return;
+      wishAliases[key]=+sel.value;
+      renderGroups(); updateStats();
+    };
+    row.appendChild(sel);
+
+    const revokeBtn=document.createElement('button');
+    revokeBtn.className='btn';
+    revokeBtn.style.cssText='font-size:.75rem;padding:.15rem .4rem;background:#e74c3c;margin:0';
+    revokeBtn.textContent='Aufheben';
+    revokeBtn.onclick=()=>{ delete wishAliases[key]; renderGroups(); updateStats(); };
+    row.appendChild(revokeBtn);
+
+    body.appendChild(row);
+  });
+
+  details.appendChild(body);
+  container.innerHTML='';
+  container.appendChild(details);
+}
+
+function attachDrag(){
+  document.querySelectorAll('.person').forEach(el=>{
+    el.ondragstart=e=>{
+      const pid=parseInt(e.target.closest('.person')?.dataset.id??e.target.dataset.id);
+      const person=persons.find(p=>p.id===pid);
+      if(!person) return;
+      /* 1.* (minor): auto-unlock on drag */
+      if(person.locked){
+        person.locked=false;
+        e.target.closest('.person').classList.remove('locked');
+        const lb=e.target.closest('.person').querySelector('.lockBtn');
+        if(lb) lb.textContent='Fixieren';
+      }
+      e.dataTransfer.setData('text/plain',pid);
+    };
+  });
+  document.querySelectorAll('.group').forEach(g=>{
+    g.ondragover=e=>{ e.preventDefault(); g.classList.add('drag-over'); };
+    g.ondragleave=()=>g.classList.remove('drag-over');
+    g.ondrop=e=>{
+      g.classList.remove('drag-over');
+      const pid=parseInt(e.dataTransfer.getData('text/plain'));
+      if(isNaN(pid)) return;
+      const person=persons.find(p=>p.id===pid);
+      const target=parseInt(g.dataset.group);
+      groups.forEach(arr=>{const idx=arr.indexOf(pid);if(idx>-1)arr.splice(idx,1);});
+      groups[target].push(pid);
+      person.group=target;
+      renderGroups(); updateStats();
+      if(document.getElementById('tab-zuteilung')?.style.display!=='none') renderZuteilung();
+    };
+  });
+}
+
+function attachLocks(){
+  document.querySelectorAll('.lockBtn').forEach(btn=>{
+    btn.onclick=e=>{
+      const pid=parseInt(e.target.closest('.person').dataset.id);
+      const p=persons.find(x=>x.id===pid);
+      p.locked=!p.locked;
+      renderGroups(); updateStats();
+    };
+  });
+}
+
+function attachEditDelete(){
+  document.querySelectorAll('.editBtn').forEach(btn=>{
+    btn.onclick=e=>{
+      const pid=parseInt(e.target.closest('.person').dataset.id);
+      editPersonCard(pid);
+    };
+  });
+  document.querySelectorAll('.delBtn').forEach(btn=>{
+    btn.onclick=e=>{
+      const pid=parseInt(e.target.closest('.person').dataset.id);
+      removePerson(pid);
+    };
+  });
+}
+
+/* ── 1.3/1.8: Inline AV/SV selects + Notiz input ───────────────────────── */
+function attachInlineEdits(){
+  document.querySelectorAll('.av-sel').forEach(sel=>{
+    sel.onchange=()=>{
+      const p=persons.find(x=>x.id===+sel.dataset.pid); if(!p) return;
+      p.av=sel.value; applyGradeStyle(sel);
+      const tot=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
+      maxDEperGroup=totalStudents>0?ceilDiv(tot,5):0;
+      updateStats();
+    };
+  });
+  document.querySelectorAll('.sv-sel').forEach(sel=>{
+    sel.onchange=()=>{
+      const p=persons.find(x=>x.id===+sel.dataset.pid); if(!p) return;
+      p.sv=sel.value; applyGradeStyle(sel);
+      const tot=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
+      maxDEperGroup=totalStudents>0?ceilDiv(tot,5):0;
+      updateStats();
+    };
+  });
+  document.querySelectorAll('.notiz-inp').forEach(inp=>{
+    inp.oninput=()=>{
+      const p=persons.find(x=>x.id===+inp.dataset.pid); if(!p) return;
+      p.notiz=inp.value;
+    };
+    /* Stop drag from firing when typing in the note field */
+    inp.ondragstart=e=>e.stopPropagation();
+  });
+}
+
+/* ── 1.5: Wish pairs (ERSTWUNSCH + ZWEITWU, name-matched) ──────────────── */
+function computeWishPairs(){
+  /* F1: Fuzzy-Matching via matchPersonByName statt exaktem nameMap-Lookup */
+  const pairs=[];
+  persons.forEach(p=>{
+    [p.erstwunsch, p.zweitwu].filter(w=>w).forEach(w=>{
+      const target = matchPersonByName(w);
+      if(!target || target.id === p.id) return;
+      const j = target.id;
+      const key=`${Math.min(p.id,j)}_${Math.max(p.id,j)}`;
+      if(pairs.some(pr=>pr.key===key)) return;
+      const pJ = target;
+      const rec=[pJ.erstwunsch,pJ.zweitwu]
+        .some(pw => pw && !!matchPersonByName(pw) &&
+                    matchPersonByName(pw).id === p.id);
+      pairs.push({i:p.id, j, type:rec?'mutual':'one', key});
+    });
+  });
+  return pairs;
+}
+
+/* ── 1.1–1.8: CSV loader (new schema) ──────────────────────────────────── */
+/* Letzter Rohtext im Speicher – ermöglicht Re-Parse ohne erneuten Upload */
+let lastCSVText=null;
+
+/* Hilfsfunktion: Ja/leer → boolean (für Förderbedarf) */
+function parseJaNein(v){ return (v||'').toLowerCase().trim()==='ja'; }
+
+/* AV/SV: Buchstabe A–E validieren, sonst Fallback 'C' */
+function parseAVSV(v){
+  const x=(v||'').toUpperCase().trim();
+  return ['A','B','C','D','E'].includes(x)?x:'C';
+}
+
+/* Baut persons[] aus kanonisierten Zeilen. Gibt {ok, errors} zurück. */
+function buildPersonsFromRows(rawRows){
+  const rows=rawRows.map(canonicalizeRow);
+  const first=rows[0]||{};
+  const missing=['TOPF','GESCHLECHT'].filter(col=>!(col in first));
+  if(missing.length){
+    return {ok:false, fatal:`Pflichtspalten fehlen: ${missing.join(', ')}. `
+      +`Erwartet werden u.a. Name, Vorname, Topf, Geschlecht (Spaltenreihenfolge egal).`};
+  }
+  const errors=[];
+  const nameSet=new Set();
+  rows.forEach((r,idx)=>{
+    const line=idx+2;
+    const fn=((r.VORNAME||'').trim()+' '+(r.NAME||'').trim()).trim();
+    if(!fn) errors.push(`Zeile ${line}: NAME und VORNAME fehlen.`);
+    if(fn && nameSet.has(fn.toLowerCase()))
+      errors.push(`Zeile ${line}: Doppelter Name „${fn}".`);
+    else if(fn) nameSet.add(fn.toLowerCase());
+    if(![1,2,3,4,5].includes(+r.TOPF))
+      errors.push(`Zeile ${line}: Topf muss 1–5 sein (ist: „${r.TOPF}").`);
+    if(!['weiblich','männlich'].includes((r.GESCHLECHT||'').toLowerCase()))
+      errors.push(`Zeile ${line}: GESCHLECHT muss „weiblich" oder „männlich" sein.`);
+  });
+  if(errors.length) return {ok:false, errors};
+
+  persons=rows.map((r,i)=>({
+    id:        i,
+    name:      (r.NAME   ||'').trim(),
+    vorname:   (r.VORNAME||'').trim(),
+    geschlecht:(r.GESCHLECHT||'').toLowerCase().trim(),
+    topf:      +r.TOPF,
+    emotionale:parseJaNein(r.EMOTIONALE),
+    geistigeen:parseJaNein(r.GEISTIGEEN),
+    hören:     parseJaNein(r.HÖREN),
+    körperlmot:parseJaNein(r.KÖRPERLMOT),
+    lernen:    parseJaNein(r.LERNEN),
+    sehen:     parseJaNein(r.SEHEN),
+    sprache:   parseJaNein(r.SPRACHE),
+    erstwunsch:(r.ERSTWUNSCH||'').trim(),
+    zweitwu:   (r.ZWEITWU   ||'').trim(),
+    nichtinein:(r.NICHTINEIN||'').trim(),
+    /* AV/SV jetzt aus CSV – Fallback 'C' wenn Spalte fehlt oder Wert ungültig */
+    av:        parseAVSV(r.AV),
+    sv:        parseAVSV(r.SV),
+    notiz:     (r.NOTIZ||'').trim(),
+    locked:false, group:null
+  }));
+  totalStudents=persons.length;
+  const totalDE=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
+  maxDEperGroup=totalStudents>0?ceilDiv(totalDE,5):0;
+  return {ok:true};
+}
+
+/* Verarbeitet geparste Rohzeilen, rendert bei Erfolg, zeigt sonst Fehler */
+function applyParsedRows(rawRows, msg){
+  if(!rawRows.length){ msg.innerHTML='<p class="error">CSV ist leer.</p>'; return; }
+  const res=buildPersonsFromRows(rawRows);
+  if(res.fatal){ msg.innerHTML=`<p class="error">${res.fatal}</p>`; return; }
+  if(!res.ok){
+    msg.innerHTML='<p class="error">Fehler beim Laden:</p><ul class="error">'
+      +res.errors.map(e=>`<li>${e}</li>`).join('')+'</ul>';
+    return;
+  }
+  initialDistribution();
+  renderGroups(); renderTutors(); updateStats();
+  msg.innerHTML=`<p class="info">${totalStudents} Personen geladen.</p>`;
+}
+
+/* Re-Parse mit explizit gewähltem Trennzeichen (ohne neuen Upload) */
+function reparseWithSeparator(sep){
+  if(sep==='\\t') sep='\t'; /* aus HTML-Attribut übergebenes Tab entschärfen */
+  const msg=document.getElementById('msgArea');
+  if(!lastCSVText){ msg.innerHTML='<p class="error">Keine CSV im Speicher. Bitte erneut einlesen.</p>'; return; }
+  applyParsedRows(csvParse(lastCSVText, sep), msg);
+}
+
+document.getElementById('loadBtn').onclick=()=>{
+  const file=document.getElementById('personFile').files[0];
+  const msg=document.getElementById('msgArea');
+  msg.innerHTML='';
+  if(!file){ msg.innerHTML='<p class="error">Bitte Personen-CSV auswählen.</p>'; return; }
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const text=e.target.result;
+    lastCSVText=text; /* im Speicher behalten für Re-Parse */
+    const det=detectSeparator(text);
+
+    /* Separator-Plausibilität: Bei nur 1 Feld wurde wahrscheinlich das
+       falsche Trennzeichen erkannt (z.B. Komma-CSV, obwohl Semikolon erwartet). */
+    if(det.fieldCount<2){
+      const alt=det.separator===';'?',':';';
+      msg.innerHTML=`<p class="warning">⚠ Trennzeichen unklar: Mit „${sepName(det.separator)}" `
+        +`wurde nur eine Spalte erkannt. Soll mit „${sepName(alt)}" erneut versucht werden?</p>`
+        +`<button class="btn" onclick="reparseWithSeparator('${alt==='\t'?'\\t':alt}')">Mit ${sepName(alt)} einlesen</button> `
+        +`<button class="btn" style="background:#7f8c8d" onclick="reparseWithSeparator('${det.separator==='\t'?'\\t':det.separator}')">Trotzdem mit ${sepName(det.separator)}</button>`;
+      return;
+    }
+
+    /* Hinweis bei Komma (in Deutschland unüblich – könnte falsch sein) */
+    if(det.separator===','){
+      msg.innerHTML=`<p class="warning">ℹ Trennzeichen „Komma" erkannt. In Deutschland ist `
+        +`„Semikolon" üblich (Excel-Standard). Die Datei wird mit Komma eingelesen – `
+        +`falls die Spalten nicht stimmen, mit Semikolon erneut versuchen:</p>`
+        +`<button class="btn" style="background:#7f8c8d" onclick="reparseWithSeparator(';')">Mit Semikolon einlesen</button>`;
+      /* trotzdem direkt mit Komma laden, Nutzer kann korrigieren */
+      const sub=document.createElement('div');
+      applyParsedRows(csvParse(text, ','), sub);
+      msg.insertAdjacentHTML('beforeend', sub.innerHTML);
+      return;
+    }
+
+    applyParsedRows(csvParse(text, det.separator), msg);
+  };
+  reader.readAsText(file);
+};
+
+/* ── Tutor CSV (Separator-Erkennung, eigene Statuszeile) ─────────────────── */
+document.getElementById('tutorLoadBtn').onclick=()=>{
+  const tFile=document.getElementById('tutorFile').files[0];
+  const msg=document.getElementById('tutorMsg');
+  if(!tFile){ if(msg) msg.innerHTML='<p class="error">Bitte Tutor-CSV auswählen.</p>'; return; }
+  const tReader=new FileReader();
+  tReader.onload=ev=>{
+    const sep=detectSeparator(ev.target.result).separator;
+    const tRows=csvParse(ev.target.result, sep);
+    for(let i=0;i<5;i++){
+      if(tRows[i]){
+        for(let j=0;j<3;j++){
+          tutors[i][j].kürzel=tRows[i][`TutorKürzel${j+1}`]??(j===0?tRows[i]['TutorKürzel']||'':'');
+          tutors[i][j].fächer=tRows[i][`FächerKombi${j+1}`]??(j===0?tRows[i]['FächerKombi']||'':'');
+        }
+      }
+    }
+    renderTutors(); initTutorInputs();
+    if(document.getElementById('tab-zuteilung')?.style.display!=='none') renderZuteilung();
+    if(msg) msg.innerHTML=`<p class="info">Tutor-CSV geladen (${sepName(sep)}-getrennt).</p>`;
+  };
+  tReader.readAsText(tFile);
+};
+
+/* ── Manual person add (updated for new schema) ──────────────────────────── */
+
+document.getElementById('addPersonBtn').onclick=()=>{
+  const msg    =document.getElementById('manualMsg');
+  const vorname=(document.getElementById('newVorname').value||'').trim();
+  const name   =(document.getElementById('newName').value||'').trim();
+  const topf   =+document.getElementById('newTopf').value;
+  const geschl =(document.getElementById('newGeschlecht').value||'').trim();
+  const av     =document.getElementById('newAV').value;
+  const sv     =document.getElementById('newSV').value;
+  const erw    =(document.getElementById('newErstwunsch').value||'').trim();
+  const zwei   =(document.getElementById('newZweitwu').value||'').trim();
+  const nicht  =(document.getElementById('newNichtinein').value||'').trim();
+  const notiz  =(document.getElementById('newNotiz').value||'').trim();
+
+  const errors=[];
+  if(!vorname&&!name)   errors.push('Vorname oder Name fehlt.');
+  const full=`${vorname} ${name}`.trim();
+  if(persons.some(p=>displayName(p).toLowerCase()===full.toLowerCase()))
+    errors.push(`Name „${full}" ist bereits vorhanden.`);
+  if(![1,2,3,4,5].includes(topf)) errors.push('Topf muss 1–5 sein.');
+  if(!['weiblich','männlich'].includes(geschl))
+    errors.push('Geschlecht muss „weiblich" oder „männlich" sein.');
+  if(errors.length){ msg.innerHTML='<p class="error">'+errors.join('<br>')+'</p>'; return; }
+
+  const newId=persons.length;
+  const p={
+    id:newId, name, vorname, geschlecht:geschl, topf,
+    emotionale:false, geistigeen:false, hören:false,
+    körperlmot:false, lernen:false, sehen:false, sprache:false,
+    erstwunsch:erw, zweitwu:zwei, nichtinein:nicht,
+    av, sv, notiz, locked:false, group:null
+  };
+  persons.push(p);
+  totalStudents=persons.length;
+  const totalDE=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
+  maxDEperGroup=ceilDiv(totalDE,5);
+
+  /* Place in smallest valid group */
+  const order=groups.map((g,i)=>({i,size:g.length})).sort((a,b)=>a.size-b.size);
+  let placed=false;
+  for(const {i} of order){
+    if(canPlaceInGroup(newId,i)){ groups[i].push(newId); p.group=i; placed=true; break; }
+  }
+  if(!placed){
+    const fb=order[0].i; groups[fb].push(newId); p.group=fb;
+    msg.innerHTML=`<p class="warning">„${full}" in ${klasseName(fb)} (Constraints nicht voll erfüllbar).</p>`;
+  } else {
+    msg.innerHTML=`<p class="info">„${full}" → ${klasseName(p.group)}.</p>`;
+  }
+  lastManualId=newId;
+  clearManualForm();
+  renderGroups(); updateStats();
+};
+
+document.getElementById('removePersonBtn').onclick=()=>{
+  const msg=document.getElementById('manualMsg');
+  if(lastManualId===null){
+    msg.innerHTML='<p class="warning">Keine manuell hinzugefügte Person vorhanden.</p>'; return;
+  }
+  const p=persons.find(x=>x.id===lastManualId);
+  if(!p){ lastManualId=null; return; }
+  if(p.group!==null) groups[p.group]=groups[p.group].filter(id=>id!==lastManualId);
+  persons=persons.filter(x=>x.id!==lastManualId);
+  totalStudents=persons.length;
+  const tot=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
+  maxDEperGroup=totalStudents>0?ceilDiv(tot,5):0;
+  msg.innerHTML=`<p class="info">„${displayName(p)}" entfernt.</p>`;
+  lastManualId=null;
+  renderGroups(); updateStats();
+};
+
+function clearManualForm(){
+  ['newVorname','newName','newErstwunsch','newZweitwu','newNichtinein','newNotiz']
+    .forEach(id=>{ document.getElementById(id).value=''; });
+  ['newTopf','newGeschlecht','newAV','newSV']
+    .forEach(id=>{ document.getElementById(id).value=''; });
+}
+
+/* ── Initial distribution (unchanged logic) ─────────────────────────────── */
+function initialDistribution(){
+  groups=[[],[],[],[],[]];
+  const topfMap={1:[],2:[],3:[],4:[],5:[]};
+  persons.forEach(p=>topfMap[p.topf].push(p.id));
+  Object.values(topfMap).forEach(arr=>{
+    const lo=floorDiv(arr.length,5), hi=ceilDiv(arr.length,5), rem=arr.length%5;
+    let idx=0;
+    for(let g=0;g<5;g++){
+      const target=g<rem?hi:lo;
+      for(let i=0;i<target&&idx<arr.length;i++,idx++){
+        groups[g].push(arr[idx]); persons.find(x=>x.id===arr[idx]).group=g;
+      }
+    }
+  });
+  const totalDE=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
+  maxDEperGroup=totalStudents>0?ceilDiv(totalDE,5):0;
+}
+
+
+
+/* ── Pre-flight check (Förderbedarf removed per spec) ───────────────────── */
+function lockedPreflightCheck(){
+  for(let k=1;k<=5;k++){
+    const maxPG=ceilDiv(persons.filter(p=>p.topf===k).length,5);
+    for(let g=0;g<5;g++){
+      const cnt=persons.filter(p=>p.locked&&p.topf===k&&p.group===g).length;
+      if(cnt>maxPG) return `Topf ${k} – ${klasseName(g)}: ${cnt} fixierte Personen (max ${maxPG}).`;
+    }
+  }
+  for(let g=0;g<5;g++){
+    const cnt=persons.filter(p=>p.locked
+      &&(['D','E'].includes(p.av)||['D','E'].includes(p.sv))&&p.group===g).length;
+    if(cnt>maxDEperGroup)
+      return `D/E-Grenzwert – ${klasseName(g)}: ${cnt} fixierte D/E-Personen (max ${maxDEperGroup}).`;
+  }
+  /* 3.3: Detect locked persons who violate their own NICHTINEIN entry */
+  const nm3={};
+  persons.forEach(p=>{ nm3[displayName(p).toLowerCase()]=p.id; });
+  for(const p of persons.filter(x=>x.locked&&x.nichtinein)){
+    const norm=p.nichtinein.toLowerCase().trim();
+    const jId=nm3[norm];
+    if(jId===undefined) continue;
+    const pJ=persons.find(x=>x.id===jId);
+    if(pJ&&pJ.locked&&pJ.group===p.group)
+      return `Ausschluss-Konflikt: „${displayName(p)}" und „${displayName(pJ)}" sind beide fixiert in ${klasseName(p.group)} – NICHTINEIN nicht erfüllbar.`;
+  }
+  return null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   §2: Reiner JS-Solver – keine externen Abhängigkeiten, offline-fähig
+   Algorithmus: Greedy-Start + Hill-Climbing (zufällige Tauschoperationen)
+   Für N ≤ 35 liefert er in ~50 ms praktisch optimale Ergebnisse.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const SOLVER_ITERATIONS = 80000;
+
+/* 2.1: Vorberechnungen einmal pro Lauf */
+function buildSolverContext(){
+  const G=5;
+
+  /* NICHTINEIN-Ausschlusspaare als Set (kleinere id zuerst) */
+  const nameMap={};
+  persons.forEach(p=>{ nameMap[displayName(p).toLowerCase()]=p.id; });
+  const exclSet=new Set();
+  persons.forEach(p=>{
+    if(!p.nichtinein) return;
+    const jId=nameMap[p.nichtinein.toLowerCase().trim()];
+    if(jId!==undefined&&jId!==p.id)
+      exclSet.add(`${Math.min(p.id,jId)}_${Math.max(p.id,jId)}`);
+  });
+
+  /* Topf-Gesamtzahlen */
+  const topfTotal={};
+  for(let t=1;t<=5;t++) topfTotal[t]=persons.filter(p=>p.topf===t).length;
+
+  /* Wunschpaare einmalig berechnen (nicht in der inneren Schleife) */
+  const wishPairs=computeWishPairs();
+
+  /* Schneller id→Person-Lookup (vermeidet persons.find() im hot path) */
+  const byId={};
+  persons.forEach(p=>{ byId[p.id]=p; });
+
+  return {exclSet, topfTotal, wishPairs, byId, G};
+}
+
+/* 2.2: Score – nutzt globale groups[] + person.group */
+
+/* Hilfsfunktion: hat Person irgendeinen Förderbedarf? */
+function hasFoerder(p){
+  return !!(p.emotionale||p.geistigeen||p.hören||p.körperlmot||p.lernen||p.sehen||p.sprache);
+}
+
+function computeSolverScore(ctx, mode){
+  const {wishPairs, byId, G}=ctx;
+  const avgF=persons.filter(p=>p.geschlecht==='weiblich').length/G;
+
+  /* Geschlechterabweichung: Σ |female[g] - avgF| */
+  let dev=0;
+  for(let g=0;g<G;g++){
+    const f=groups[g].filter(id=>byId[id]?.geschlecht==='weiblich').length;
+    dev+=Math.abs(f-avgF);
+  }
+
+  /* Förderbedarf-Streuung: Σ |fb[g] - avgFB| → möglichst wenig FB-Kinder/Klasse */
+  const avgFB=persons.filter(p=>hasFoerder(p)).length/G;
+  let fbDev=0;
+  for(let g=0;g<G;g++){
+    const f=groups[g].filter(id=>byId[id]&&hasFoerder(byId[id])).length;
+    fbDev+=Math.abs(f-avgFB);
+  }
+
+  /* Erfüllte Wunschpaare */
+  const wish=wishPairs.filter(pr=>{
+    const pi=byId[pr.i], pj=byId[pr.j];
+    return pi&&pj&&pi.group!==null&&pi.group===pj.group;
+  }).length;
+
+  /* Gewichtung:
+     'struktur' → Geschlecht dominiert, FB sekundär
+     'wuensche' → Wünsche dominieren, FB sekundär
+     FB-Streuung wird in beiden Modi gleichgewichtig bestraft (-5) */
+  return mode==='struktur'
+    ? -10*dev - 5*fbDev + wish
+    : -dev   - 5*fbDev + 10*wish;
+}
+
+/* 2.3: Prüft ob Tausch (a→gb, b→ga) alle Hard-Constraints erfüllt.
+   Gruppengrößen sind nach einem Tausch immer gleich – keine Prüfung nötig. */
+function swapValid(a, b, ctx){
+  const {exclSet, topfTotal, byId, G}=ctx;
+  const ga=a.group, gb=b.group;
+
+  /* Topf-Balance: nur wenn verschiedene Töpfe */
+  if(a.topf!==b.topf){
+    /* ga: verliert a.topf, gewinnt b.topf */
+    const gaA=groups[ga].filter(id=>byId[id]?.topf===a.topf).length-1;
+    const gaB=groups[ga].filter(id=>byId[id]?.topf===b.topf).length+1;
+    if(gaA<floorDiv(topfTotal[a.topf],G)||gaB>ceilDiv(topfTotal[b.topf],G)) return false;
+    /* gb: verliert b.topf, gewinnt a.topf */
+    const gbB=groups[gb].filter(id=>byId[id]?.topf===b.topf).length-1;
+    const gbA=groups[gb].filter(id=>byId[id]?.topf===a.topf).length+1;
+    if(gbB<floorDiv(topfTotal[b.topf],G)||gbA>ceilDiv(topfTotal[a.topf],G)) return false;
+  }
+
+  /* D/E-Cap: nur wenn unterschiedlicher D/E-Status */
+  const isDE=p=>['D','E'].includes(p.av)||['D','E'].includes(p.sv);
+  const isDEid=id=>{ const p=byId[id]; return p&&isDE(p); };
+  const aDE=isDE(a), bDE=isDE(b);
+  if(aDE!==bDE){
+    if(aDE){ /* a (D/E) → gb */
+      if(groups[gb].filter(isDEid).length+1>maxDEperGroup) return false;
+    } else { /* b (D/E) → ga */
+      if(groups[ga].filter(isDEid).length+1>maxDEperGroup) return false;
+    }
+  }
+
+  /* NICHTINEIN: a in gb prüfen, b in ga prüfen */
+  for(const id of groups[gb]){
+    if(id===b.id) continue;
+    if(exclSet.has(`${Math.min(a.id,id)}_${Math.max(a.id,id)}`)) return false;
+  }
+  for(const id of groups[ga]){
+    if(id===a.id) continue;
+    if(exclSet.has(`${Math.min(b.id,id)}_${Math.max(b.id,id)}`)) return false;
+  }
+
+  return true;
+}
+
+/* 2.4: Hauptsolver */
+function hillClimbSolve(mode){
+  greedyFallback(); /* Greedy-Startlösung */
+
+  const ctx=buildSolverContext();
+  const unlocked=persons.filter(p=>!p.locked);
+  if(unlocked.length<2) return;
+
+  let currentScore=computeSolverScore(ctx, mode);
+
+  for(let iter=0;iter<SOLVER_ITERATIONS;iter++){
+    /* Zwei zufällige unlocked Personen aus verschiedenen Gruppen */
+    const a=unlocked[Math.floor(Math.random()*unlocked.length)];
+    const b=unlocked[Math.floor(Math.random()*unlocked.length)];
+    if(a.id===b.id||a.group===b.group||a.group===null||b.group===null) continue;
+
+    if(!swapValid(a,b,ctx)) continue;
+
+    /* Tausch anwenden (in-place, ohne Array-Kopie) */
+    const ga=a.group, gb=b.group;
+    const idxA=groups[ga].indexOf(a.id);
+    const idxB=groups[gb].indexOf(b.id);
+    groups[ga][idxA]=b.id;
+    groups[gb][idxB]=a.id;
+    a.group=gb; b.group=ga;
+
+    const newScore=computeSolverScore(ctx, mode);
+
+    if(newScore>=currentScore){
+      currentScore=newScore; /* Tausch behalten */
+    } else {
+      /* Tausch rückgängig machen */
+      groups[ga][idxA]=a.id;
+      groups[gb][idxB]=b.id;
+      a.group=ga; b.group=gb;
+    }
+  }
+}
+
+/* ── 2.5: „Struktur optimieren" (Geschlechterbalance) ───────────────────── */
+document.getElementById('strukturBtn').onclick=()=>{
+  if(!persons.length){
+    document.getElementById('msgArea').innerHTML='<p class="error">Keine Personen geladen.</p>'; return;
+  }
+  const preError=lockedPreflightCheck();
+  if(preError){ document.getElementById('msgArea').innerHTML=`<p class="error">${preError}</p>`; return; }
+
+  hillClimbSolve('struktur');
+  renderGroups(); updateStats();
+  document.getElementById('msgArea').innerHTML='<p class="info">Struktur optimiert (Geschlechterbalance).</p>';
+};
+
+/* ── 2.6: „Wünsche optimieren" ───────────────────────────────────────────── */
+document.getElementById('wuenscheBtn').onclick=()=>{
+  if(!persons.length){
+    document.getElementById('msgArea').innerHTML='<p class="error">Keine Personen geladen.</p>'; return;
+  }
+  const preError=lockedPreflightCheck();
+  if(preError){ document.getElementById('msgArea').innerHTML=`<p class="error">${preError}</p>`; return; }
+
+  /* F3: Bestätigungsdialog – offene Wunschpaare mit aktueller Klasse anzeigen */
+  const allPairs=computeWishPairs();
+  const openPairs=allPairs.filter(pr=>{
+    const pi=persons.find(x=>x.id===pr.i), pj=persons.find(x=>x.id===pr.j);
+    return !pi||!pj||pi.group===null||pj.group===null||pi.group!==pj.group;
+  });
+  const fulfilled=allPairs.length-openPairs.length;
+  const pct=allPairs.length?Math.round(100*fulfilled/allPairs.length):0;
+  const previewLines=openPairs.slice(0,6).map(pr=>{
+    const pi=persons.find(x=>x.id===pr.i), pj=persons.find(x=>x.id===pr.j);
+    const ki=pi?.group!=null?klasseName(pi.group):'?';
+    const kj=pj?.group!=null?klasseName(pj.group):'?';
+    return `• ${pi?displayName(pi):'?'} (${ki}) ↔ ${pj?displayName(pj):'?'} (${kj})`;
+  });
+  if(openPairs.length>6) previewLines.push(`  … und ${openPairs.length-6} weitere`);
+  const msg=`Wünsche optimieren\n\nAktuell: ${fulfilled}/${allPairs.length} Wünsche erfüllt (${pct}%)\n\nOffene Wunschpaare:\n${previewLines.join('\n')}\n\nOptimierung starten?`;
+  if(!confirm(msg)) return;
+
+  hillClimbSolve('wuensche');
+  renderGroups(); updateStats();
+  document.getElementById('msgArea').innerHTML='<p class="info">Wünsche optimiert.</p>';
+};
+
+/* ── Greedy fallback (Förderbedarf removed) ─────────────────────────────── */
+function greedyFallback(){
+  groups=[[],[],[],[],[]];
+  persons.forEach(p=>{ if(p.locked) groups[p.group].push(p.id); });
+  const topfMap={1:[],2:[],3:[],4:[],5:[]};
+  persons.filter(p=>!p.locked).forEach(p=>topfMap[p.topf].push(p.id));
+  const ww={};
+  computeWishPairs().forEach(pr=>{
+    const w=10; ww[pr.i]=(ww[pr.i]||0)+w; ww[pr.j]=(ww[pr.j]||0)+w;
+  });
+  Object.values(topfMap).forEach(arr=>arr.sort((a,b)=>(ww[b]||0)-(ww[a]||0)));
+  Object.values(topfMap).forEach(arr=>{
+    const lo=floorDiv(arr.length,5),hi=ceilDiv(arr.length,5),rem=arr.length%5;
+    let idx=0;
+    for(let g=0;g<5;g++){
+      const tgt=g<rem?hi:lo;
+      for(let i=0;i<tgt&&idx<arr.length;i++,idx++){
+        groups[g].push(arr[idx]); persons.find(x=>x.id===arr[idx]).group=g;
+      }
+    }
+  });
+  /* D/E rebalancing */
+  const dc=groups.map(g=>g.filter(id=>{
+    const p=persons.find(x=>x.id===id);
+    return p&&(['D','E'].includes(p.av)||['D','E'].includes(p.sv));
+  }).length);
+  for(let g=0;g<5;g++){
+    while(dc[g]>maxDEperGroup){
+      const pid=groups[g].find(id=>{const p=persons.find(x=>x.id===id);return p&&(['D','E'].includes(p.av)||['D','E'].includes(p.sv));});
+      if(!pid) break;
+      const tgt=dc.reduce((best,val,idx)=>(val<dc[best]&&val<maxDEperGroup)?idx:best,0);
+      groups[g]=groups[g].filter(id=>id!==pid);
+      groups[tgt].push(pid); persons.find(x=>x.id===pid).group=tgt;
+      dc[g]--; dc[tgt]++;
+    }
+  }
+  computeWishPairs().forEach(pair=>{
+    const pI=persons.find(x=>x.id===pair.i), pJ=persons.find(x=>x.id===pair.j);
+    if(!pI||!pJ||pI.group===pJ.group) return;
+    if(canPlaceInGroup(pI.id,pJ.group)){
+      groups[pI.group]=groups[pI.group].filter(id=>id!==pI.id);
+      groups[pJ.group].push(pI.id); pI.group=pJ.group;
+    }
+  });
+}
+
+/* ── canPlaceInGroup (Förderbedarf removed per spec) ────────────────────── */
+function canPlaceInGroup(pid, targetIdx){
+  const p=persons.find(x=>x.id===pid);
+  const srcIdx=p.group;
+  const topfTotal=persons.filter(x=>x.topf===p.topf).length;
+  const isDE=['D','E'].includes(p.av)||['D','E'].includes(p.sv);
+
+  /* Target ceilings */
+  if(groups[targetIdx].length+1>ceilDiv(totalStudents,5)) return false;
+  const topfInTgt=groups[targetIdx].filter(id=>persons.find(x=>x.id===id).topf===p.topf).length;
+  if(topfInTgt+1>ceilDiv(topfTotal,5)) return false;
+  if(isDE){
+    const deInTgt=groups[targetIdx].filter(id=>{const q=persons.find(x=>x.id===id);return q&&(['D','E'].includes(q.av)||['D','E'].includes(q.sv));}).length;
+    if(deInTgt+1>maxDEperGroup) return false;
+  }
+  /* Source floors */
+  if(srcIdx===null||srcIdx===targetIdx) return true;
+  if(groups[srcIdx].length-1<floorDiv(totalStudents,5)) return false;
+  const topfInSrc=groups[srcIdx].filter(id=>persons.find(x=>x.id===id).topf===p.topf).length;
+  if(topfInSrc-1<floorDiv(topfTotal,5)) return false;
+  return true;
+}
+
+/* ── Inline edit / delete ────────────────────────────────────────────────── */
+
+function editPersonCard(pid){
+  const p=persons.find(x=>x.id===pid);
+  const card=document.querySelector(`.person[data-id="${pid}"]`);
+  if(!p||!card) return;
+  const sel=(opts,cur)=>opts.map(v=>`<option value="${v}"${v===cur?' selected':''}>${v||'–'}</option>`).join('');
+  const iS='width:100%;padding:.25rem;border:1px solid #ccc;border-radius:3px;font-size:.85rem;box-sizing:border-box';
+  card.innerHTML=`
+    <div style="width:100%;display:flex;flex-direction:column;gap:.3rem">
+      <div style="display:flex;gap:.3rem">
+        <input class="ei-vn" type="text" value="${escHtml(p.vorname)}" placeholder="Vorname"
+               style="${iS}">
+        <input class="ei-nm" type="text" value="${escHtml(p.name)}" placeholder="Name"
+               style="${iS}">
+      </div>
+      <div style="display:flex;gap:.3rem">
+        <select class="ei-topf" style="flex:1;${iS}">${sel([1,2,3,4,5],p.topf)}</select>
+        <select class="ei-gs"   style="flex:1;${iS}">
+          <option value="">–</option>
+          <option${p.geschlecht==='weiblich'?' selected':''}>weiblich</option>
+          <option${p.geschlecht==='männlich'?' selected':''}>männlich</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:.3rem">
+        <select class="ei-av" style="flex:1;${iS}">${sel(['','A','B','C','D','E'],p.av)}</select>
+        <select class="ei-sv" style="flex:1;${iS}">${sel(['','A','B','C','D','E'],p.sv)}</select>
+      </div>
+      <input class="ei-e1"  type="text" value="${escHtml(p.erstwunsch)}"
+             placeholder="Erstwunsch" style="${iS}">
+      <input class="ei-e2"  type="text" value="${escHtml(p.zweitwu)}"
+             placeholder="Zweitwunsch" style="${iS}">
+      <input class="ei-ni"  type="text" value="${escHtml(p.nichtinein)}"
+             placeholder="Nicht in einer Gruppe mit" style="${iS}">
+      <input class="ei-nz"  type="text" value="${escHtml(p.notiz||'')}"
+             placeholder="Notiz" style="${iS}">
+      <div id="ei-err-${pid}" class="error" style="font-size:.8rem"></div>
+      <div style="display:flex;gap:.3rem">
+        <button class="btn ei-save"   style="font-size:.75rem;padding:.2rem .5rem;background:#27ae60">Speichern</button>
+        <button class="btn ei-cancel" style="font-size:.75rem;padding:.2rem .5rem;background:#7f8c8d">Abbrechen</button>
+      </div>
+    </div>`;
+  card.querySelector('.ei-save').onclick=()=>savePersonEdit(pid,card);
+  card.querySelector('.ei-cancel').onclick=()=>renderGroups();
+  card.querySelectorAll('input').forEach(inp=>
+    inp.addEventListener('keydown',e=>{ if(e.key==='Enter') savePersonEdit(pid,card); }));
+}
+
+function savePersonEdit(pid,card){
+  const p=persons.find(x=>x.id===pid);
+  const errDiv=document.getElementById(`ei-err-${pid}`);
+  const newVN =card.querySelector('.ei-vn').value.trim();
+  const newNM =card.querySelector('.ei-nm').value.trim();
+  const newFN =`${newVN} ${newNM}`.trim();
+  const errors=[];
+  if(!newVN&&!newNM)  errors.push('Vorname oder Name darf nicht leer sein.');
+  if(persons.some(x=>x.id!==pid&&displayName(x).toLowerCase()===newFN.toLowerCase()))
+    errors.push(`Name „${newFN}" bereits vergeben.`);
+  if(errors.length){ errDiv.innerHTML=errors.join('<br>'); return; }
+  p.vorname    =newVN;
+  p.name       =newNM;
+  p.topf       =+card.querySelector('.ei-topf').value;
+  p.geschlecht =card.querySelector('.ei-gs').value;
+  p.av         =card.querySelector('.ei-av').value;
+  p.sv         =card.querySelector('.ei-sv').value;
+  p.erstwunsch =card.querySelector('.ei-e1').value.trim();
+  p.zweitwu    =card.querySelector('.ei-e2').value.trim();
+  p.nichtinein =card.querySelector('.ei-ni').value.trim();
+  p.notiz      =card.querySelector('.ei-nz').value.trim();
+  const tot=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
+  maxDEperGroup=ceilDiv(tot,5);
+  renderGroups(); updateStats();
+}
+
+function removePerson(pid){
+  const p=persons.find(x=>x.id===pid);
+  if(!p) return;
+  if(!confirm(`„${displayName(p)}" wirklich entfernen?`)) return;
+  if(p.group!==null) groups[p.group]=groups[p.group].filter(id=>id!==pid);
+  persons=persons.filter(x=>x.id!==pid);
+  totalStudents=persons.length;
+  if(lastManualId===pid) lastManualId=null;
+  const tot=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
+  maxDEperGroup=totalStudents>0?ceilDiv(tot,5):0;
+  renderGroups(); updateStats();
+}
+
+function escHtml(str){
+  return String(str||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ── Export / Import ─────────────────────────────────────────────────────── */
+/* NOTE: columns will be fully updated in §7; minimal version for now       */
+/* 7.1: Export – exact column set per spec:
+   NAME,VORNAME,Klasse,TutorKürzel,Topf,GESCHLECHT,AV,SV,
+   EMOTIONALE,GEISTIGEEN,HÖREN,KÖRPERLMOT,LERNEN,SEHEN,SPRACHE,
+   ERSTWUNSCH,ZWEITWU,NICHTINEIN,Locked,Notiz                       */
+document.getElementById('exportBtn').onclick=()=>{
+  const header='NAME,VORNAME,Klasse,TutorKürzel,Topf,GESCHLECHT,AV,SV,'
+              +'EMOTIONALE,GEISTIGEEN,HÖREN,KÖRPERLMOT,LERNEN,SEHEN,SPRACHE,'
+              +'ERSTWUNSCH,ZWEITWU,NICHTINEIN,Locked,Notiz';
+  const rows=persons.map(p=>{
+    const ts=(p.group!=null?tutors[p.group]:null)||[];
+    const tk=ts.filter(t=>t.kürzel).map(t=>t.kürzel).join('; ');
+    const yn=b=>b?'Ja':'Nein';
+    return [
+      csvEscape(p.name),csvEscape(p.vorname),
+      p.group!=null?klasseName(p.group):'',
+      csvEscape(tk),
+      p.topf,p.geschlecht,p.av||'',p.sv||'',
+      yn(p.emotionale),yn(p.geistigeen),yn(p.hören),yn(p.körperlmot),
+      yn(p.lernen),yn(p.sehen),yn(p.sprache),
+      csvEscape(p.erstwunsch),csvEscape(p.zweitwu),csvEscape(p.nichtinein),
+      p.locked,csvEscape(p.notiz||'')
+    ].join(',');
+  });
+  downloadCSV([header,...rows].join('\n'),'klasseneinteilung_export.csv');
+};
+
+document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
+/* 7.2: Import – restores Gruppe, AV/SV, Locked, Notiz, TutorKürzel.
+   Matches persons by "VORNAME NAME" (case-insensitive).
+   Warns for names not in the currently loaded dataset.           */
+document.getElementById('importFile').onchange=e=>{
+  const file=e.target.files[0]; if(!file) return;
+  const msg=document.getElementById('msgArea');
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const rows=csvParse(ev.target.result);
+    const errors=[];
+    /* Build lookup by "VORNAME NAME" and also "NAME VORNAME" for robustness */
+    const byFull={};
+    persons.forEach(p=>{
+      byFull[displayName(p).toLowerCase()]=p;
+      byFull[((p.name+' '+p.vorname).trim()).toLowerCase()]=p;
+    });
+    rows.forEach((r,idx)=>{
+      const line=idx+2;
+      /* Accept both "VORNAME NAME" (our export) and "NAME VORNAME" column orders */
+      const fn1=((r.VORNAME||'').trim()+' '+(r.NAME||'').trim()).trim().toLowerCase();
+      const fn2=((r.NAME||'').trim()+' '+(r.VORNAME||'').trim()).trim().toLowerCase();
+      const person=byFull[fn1]||byFull[fn2];
+      if(!fn1&&!fn2){ errors.push(`Zeile ${line}: Name fehlt.`); return; }
+      if(!person){
+        errors.push(`Zeile ${line}: „${r.VORNAME||''} ${r.NAME||''}".trim() nicht gefunden – übersprungen.`);
+        return;
+      }
+      /* Gruppe: accept "Gruppe 1", "1", "5.1" */
+      const raw=String(r.Gruppe||'').replace(/Gruppe\s*/i,'').replace('5.','').trim();
+      if(raw) person.group=+raw-1;
+      /* AV / SV */
+      /* AV / SV – expliziter Wert überschreibt Default 'C' */
+      if(r.AV&&['A','B','C','D','E'].includes(r.AV)) person.av=r.AV;
+      if(r.SV&&['A','B','C','D','E'].includes(r.SV)) person.sv=r.SV;
+      /* Locked */
+      person.locked=(r.Locked||'').toLowerCase()==='true';
+      /* Notiz */
+      if(r.Notiz!==undefined) person.notiz=r.Notiz||'';
+    });
+    if(errors.length) msg.innerHTML='<p class="warning">'+errors.join('<br>')+'</p>';
+    else msg.innerHTML='<p class="info">Import erfolgreich.</p>';
+    groups=[[],[],[],[],[]];
+    persons.forEach(p=>{ if(p.group!=null&&p.group>=0&&p.group<5) groups[p.group].push(p.id); });
+    const tot=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
+    maxDEperGroup=totalStudents>0?ceilDiv(tot,5):0;
+    renderGroups(); updateStats();
+  };
+  reader.readAsText(file); e.target.value='';
+};
+
+/* ── Full JSON export / import ───────────────────────────────────────────── */
+document.getElementById('fullExportBtn').onclick=()=>{
+  const state={v:3, persons, tutors,
+    wishAliases,
+    confirmedAbsent:[...confirmedAbsent]};   /* v3: Wunsch-Aliase + bestätigte Abwesenheiten */
+  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='klasseneinteilung_vollexport.json'; a.click();
+  URL.revokeObjectURL(url);
+};
+
+document.getElementById('fullImportBtn').onclick=()=>document.getElementById('fullImportFile').click();
+document.getElementById('fullImportFile').onchange=e=>{
+  const file=e.target.files[0]; if(!file) return;
+  const msg=document.getElementById('msgArea');
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    let state;
+    try{ state=JSON.parse(ev.target.result); }
+    catch(err){ msg.innerHTML=`<p class="error">Kein gültiges JSON: ${escHtml(err.message)}</p>`; return; }
+    if(!state.persons||!state.tutors){
+      msg.innerHTML='<p class="error">Unbekanntes Export-Format.</p>'; return;
+    }
+    persons=state.persons; totalStudents=persons.length;
+    tutors=state.tutors;
+    wishAliases=state.wishAliases||{};
+    confirmedAbsent=new Set(state.confirmedAbsent||[]);
+    const tot=persons.filter(x=>['D','E'].includes(x.av)||['D','E'].includes(x.sv)).length;
+    maxDEperGroup=totalStudents>0?ceilDiv(tot,5):0;
+    lastManualId=null;
+    groups=[[],[],[],[],[]];
+    persons.forEach(p=>{ if(p.group!=null&&p.group>=0&&p.group<5) groups[p.group].push(p.id); });
+    initTutorInputs(); renderGroups(); renderTutors(); updateStats();
+    msg.innerHTML=`<p class="info">${persons.length} Personen und Tutordaten geladen.</p>`;
+  };
+  reader.readAsText(file); e.target.value='';
+};
+
+/* ── Sortierung Klassenübersicht ─────────────────────────────────────────── */
+const SORT_AV_SV_ORDER={'A':0,'B':1,'C':2,'D':3,'E':4,'':5,'–':5};
+function sortCompareValue(p,key){
+  switch(key){
+    case 'name': return displayName(p).toLowerCase();
+    case 'topf': return p.topf;
+    case 'geschlecht': return p.geschlecht||'';
+    case 'av': return SORT_AV_SV_ORDER[p.av||'']??9;
+    case 'sv': return SORT_AV_SV_ORDER[p.sv||'']??9;
+    case 'fb': return hasFoerder(p)?0:1; /* FB-Kinder zuerst bei Aufsteigend */
+    default: return 0;
+  }
+}
+function sortIdsForKlassenansicht(g, ids){
+  const s=klassenansichtSort[g];
+  if(!s||!s.key) return ids;
+  const withP=ids.map(id=>({id,p:persons.find(x=>x.id===id)})).filter(x=>x.p);
+  withP.sort((a,b)=>{
+    const va=sortCompareValue(a.p,s.key), vb=sortCompareValue(b.p,s.key);
+    if(va<vb) return -1*s.dir; if(va>vb) return 1*s.dir; return 0;
+  });
+  return withP.map(x=>x.id);
+}
+function sortArrow(g,key){
+  const s=klassenansichtSort[g];
+  if(!s||s.key!==key) return '';
+  return s.dir===1?' ▲':' ▼';
+}
+
+/* ── F4: Klassenübersicht – kompakte Tabellenübersicht ─────────────────────── */
+function renderKlassenansicht(){
+  const container=document.getElementById('klassenansichtContainer');
+  if(!container) return;
+  if(!persons.length){
+    container.innerHTML='<p style="color:#7f8c8d">Keine Personen geladen.</p>'; return;
+  }
+  const FOERDER_SHORT={
+    emotionale:'Em', geistigeen:'Ge', hören:'Hö', körperlmot:'Km',
+    lernen:'Le', sehen:'Se', sprache:'Sp'
+  };
+  const btnS='font-size:.78rem;padding:.22rem .55rem;color:#fff;border:none;'
+            +'border-radius:3px;cursor:pointer;margin-left:.3rem;font-weight:600;'
+            +'box-shadow:0 1px 3px rgba(0,0,0,.3);';
+  /* Welche Gruppen zeigen? */
+  const gRange = activeKlassenSub==='all' ? [0,1,2,3,4] : [+activeKlassenSub];
+  let html='';
+  for(const g of gRange){
+    const ids=groups[g]||[];
+    html+=`<details open style="margin-bottom:.9rem;background:#fff;border:1px solid #ddd;`
+         +`border-radius:4px;padding:.4rem .6rem">`;
+
+    /* ── Summary mit Export-Buttons ── */
+    html+=`<summary style="cursor:pointer;font-size:.93rem;`
+         +`padding:.2rem 0;list-style:none;display:flex;justify-content:space-between;align-items:center">`;
+    html+=`<span style="display:flex;flex-direction:column;gap:.1rem">`
+         +`<span style="font-weight:700">${klasseName(g)} – ${ids.length} Schüler/innen</span>`
+         +`<span>${tutorInfo(g)}</span>`
+         +`</span>`;
+    if(ids.length){
+      html+=`<span>`;
+      html+=`<button onclick="event.stopPropagation();exportKlasseCSV(${g})" `
+           +`style="${btnS}background:#2980b9" title="CSV exportieren">CSV</button>`;
+      html+=`<button onclick="event.stopPropagation();exportKlasseXLS(${g})" `
+           +`style="${btnS}background:#27ae60" title="Excel-Tabelle exportieren">Excel</button>`;
+      html+=`<button onclick="event.stopPropagation();exportKlasseWord(${g})" `
+           +`style="${btnS}background:#8e44ad" title="Word-Dokument exportieren">Word</button>`;
+      html+=`<button onclick="event.stopPropagation();exportKlassePDF(${g})" `
+           +`style="${btnS}background:#c0392b" title="PDF exportieren">PDF</button>`;
+      html+=`</span>`;
+    }
+    html+=`</summary>`;
+
+    if(!ids.length){
+      html+=`<p style="color:#aaa;font-size:.82rem;margin:.2rem 0">Keine Personen zugewiesen.</p></details>`;
+      continue;
+    }
+    html+=`<table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-top:.4rem">`;
+    html+=`<thead><tr style="background:#f0f0f0">`;
+    html+=`<th style="padding:.2rem .35rem;border:1px solid #ddd;width:2.2rem">#</th>`;
+    html+=`<th class="sortable-th" data-sort-key="name" data-sort-g="${g}" `
+         +`style="text-align:left;padding:.2rem .35rem;border:1px solid #ddd;cursor:pointer" `
+         +`title="Klicken zum Sortieren">Name${sortArrow(g,'name')}</th>`;
+    html+=`<th class="sortable-th" data-sort-key="topf" data-sort-g="${g}" `
+         +`style="padding:.2rem .35rem;border:1px solid #ddd;cursor:pointer" `
+         +`title="Klicken zum Sortieren">Topf${sortArrow(g,'topf')}</th>`;
+    html+=`<th class="sortable-th" data-sort-key="geschlecht" data-sort-g="${g}" `
+         +`style="padding:.2rem .35rem;border:1px solid #ddd;cursor:pointer" `
+         +`title="Klicken zum Sortieren">Gesch.${sortArrow(g,'geschlecht')}</th>`;
+    html+=`<th class="sortable-th" data-sort-key="av" data-sort-g="${g}" `
+         +`style="padding:.2rem .35rem;border:1px solid #ddd;cursor:pointer" `
+         +`title="Klicken zum Sortieren">AV${sortArrow(g,'av')}</th>`;
+    html+=`<th class="sortable-th" data-sort-key="sv" data-sort-g="${g}" `
+         +`style="padding:.2rem .35rem;border:1px solid #ddd;cursor:pointer" `
+         +`title="Klicken zum Sortieren">SV${sortArrow(g,'sv')}</th>`;
+    html+=`<th class="sortable-th" data-sort-key="fb" data-sort-g="${g}" `
+         +`style="padding:.2rem .35rem;border:1px solid #ddd;cursor:pointer" `
+         +`title="Klicken zum Sortieren">FB${sortArrow(g,'fb')}</th>`;
+    html+=`<th style="text-align:left;padding:.2rem .35rem;border:1px solid #ddd">Wunsch ✔/⏳</th>`;
+    html+=`<th style="text-align:left;padding:.2rem .35rem;border:1px solid #ddd">Notiz</th>`;
+    html+=`</tr></thead><tbody>`;
+    const sortedIds=sortIdsForKlassenansicht(g, ids);
+    sortedIds.forEach((id,idx)=>{
+      const p=persons.find(x=>x.id===id); if(!p) return;
+      const fb=Object.entries(FOERDER_SHORT).filter(([k])=>p[k]).map(([,l])=>l).join(' ');
+      const w1=p.erstwunsch?wishBadge(p.erstwunsch,g):'';
+      const w2=p.zweitwu?wishBadge(p.zweitwu,g):'';
+      const wishes=[w1,w2].filter(Boolean).join(' / ');
+      const isDE=['D','E'].includes(p.av)||['D','E'].includes(p.sv);
+      const hasFB=!!fb;
+      let rowBg='';
+      if(isDE) rowBg='background:#fef9e7';
+      if(hasFB) rowBg='background:#fdecea'; /* FB-Zeile leicht rot hinterlegt */
+      if(isDE&&hasFB) rowBg='background:#fde8c0';
+      html+=`<tr style="${rowBg}">`;
+      html+=`<td style="text-align:center;padding:.15rem .35rem;border:1px solid #eee;color:#94a3b8;font-size:.75rem">${idx+1}</td>`;
+      html+=`<td style="padding:.15rem .35rem;border:1px solid #eee">${escHtml(displayName(p))}${p.locked?' 🔒':''}</td>`;
+      html+=`<td style="text-align:center;padding:.15rem .35rem;border:1px solid #eee">${p.topf}</td>`;
+      html+=`<td style="text-align:center;padding:.15rem .35rem;border:1px solid #eee">${p.geschlecht==='weiblich'?'♀':'♂'}</td>`;
+      html+=`<td style="text-align:center;padding:.15rem .35rem;border:1px solid #eee">${p.av||'–'}</td>`;
+      html+=`<td style="text-align:center;padding:.15rem .35rem;border:1px solid #eee">${p.sv||'–'}</td>`;
+      html+=`<td style="text-align:center;padding:.15rem .35rem;border:1px solid #eee;`
+           +`color:${hasFB?'#c0392b':'#7f8c8d'};font-weight:${hasFB?'bold':'normal'};font-size:.75rem">${fb||'–'}</td>`;
+      html+=`<td style="padding:.15rem .35rem;border:1px solid #eee;font-size:.75rem">${wishes||'–'}</td>`;
+      html+=`<td style="padding:.15rem .35rem;border:1px solid #eee;font-size:.78rem;color:#555">${escHtml(p.notiz||'')}</td>`;
+      html+='</tr>';
+    });
+    html+=`</tbody></table></details>`;
+  }
+  container.innerHTML=html;
+  /* Aktive Suche nach Re-Render neu anwenden */
+  const ksq=document.getElementById('klassenSearch');
+  if(ksq&&ksq.value.trim()) filterKlassenansicht(ksq.value);
+}
+
+/* ── Per-Klasse Export ────────────────────────────────────────────────────── */
+
+/* Gemeinsame Datenbasis für alle Export-Formate */
+function exportKlasseData(g){
+  const ids=sortIdsForKlassenansicht(g, groups[g]||[]);
+  const tutor=(tutors[g]||[]).filter(t=>t.kürzel).map(t=>
+    t.kürzel+(t.fächer?` (${t.fächer})`:'')
+  ).join(', ');
+  const rows=ids.map((id,idx)=>{
+    const p=persons.find(x=>x.id===id); if(!p) return null;
+    const fb=Object.entries(FOERDER).filter(([k])=>p[k]).map(([,l])=>l).join(', ')||'–';
+    const w1m=p.erstwunsch?(matchPersonByName(p.erstwunsch)?.group===g?'✔':'⏳'):'';
+    const w2m=p.zweitwu  ?(matchPersonByName(p.zweitwu  )?.group===g?'✔':'⏳'):'';
+    return {
+      nr:idx+1, nachname:p.name, vorname:p.vorname, topf:p.topf,
+      geschlecht:p.geschlecht, av:p.av||'–', sv:p.sv||'–',
+      fb, erstwunsch:(p.erstwunsch||'')+(w1m?' '+w1m:''),
+      zweitwu:(p.zweitwu||'')+(w2m?' '+w2m:''), notiz:p.notiz||''
+    };
+  }).filter(Boolean);
+  return {rows, className:klasseName(g), tutor};
+}
+
+const EXP_COLS=['#','Nachname','Vorname','Topf','Geschlecht','AV','SV',
+                'Förderbedarf','Erstwunsch','Zweitwunsch','Notiz'];
+function rowToArr(r){
+  return [r.nr,r.nachname,r.vorname,r.topf,r.geschlecht,r.av,r.sv,
+          r.fb,r.erstwunsch,r.zweitwu,r.notiz];
+}
+
+/* CSV mit UTF-8-BOM (öffnet in Excel korrekt) – inkl. Tutor-Kopfzeile.
+   Semikolon-getrennt (deutscher Excel-Standard, konsistent zum Import). */
+function exportKlasseCSV(g){
+  const {rows,className,tutor}=exportKlasseData(g);
+  const lines=[
+    `${className} (${rows.length} SuS)`,
+    `Tutor:;${tutor||'Kein Tutor zugewiesen'}`,
+    '',
+    EXP_COLS.join(';'),
+    ...rows.map(r=>rowToArr(r).map(v=>csvEscape(String(v??''))).join(';'))
+  ];
+  downloadCSV('\uFEFF'+lines.join('\n'), `${className.replace(/\s/g,'_')}_Export.csv`);
+}
+
+/* Excel: HTML-Tabelle mit Office-Namespace (.xls) – kein Library-Bedarf */
+function exportKlasseXLS(g){
+  const {rows,className,tutor}=exportKlasseData(g);
+  const thead=EXP_COLS.map(h=>`<th>${escHtml(h)}</th>`).join('');
+  const tbody=rows.map(r=>`<tr>${rowToArr(r).map(v=>`<td>${escHtml(String(v??''))}</td>`).join('')}</tr>`).join('');
+  const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office"
+    xmlns:x="urn:schemas-microsoft-com:office:excel">
+<head><meta charset="UTF-8">
+<style>
+  body{font-family:Arial,sans-serif;font-size:10pt}
+  h2{font-size:13pt}p.sub{font-size:9pt;color:#666}
+  table{border-collapse:collapse}
+  th,td{border:1px solid #999;padding:3pt 7pt}
+  th{background:#d0d8e4;font-weight:bold;text-align:left}
+</style></head>
+<body>
+<h2>${escHtml(className)} (${rows.length} SuS)</h2>
+${tutor?`<p class="sub">Tutor: ${escHtml(tutor)}</p>`:''}
+<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
+</body></html>`;
+  const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=`${className.replace(/\s/g,'_')}_Export.xls`; a.click();
+}
+
+/* Word: HTML mit Office-Namespace (.doc) – öffnet direkt in Word */
+function exportKlasseWord(g){
+  const {rows,className,tutor}=exportKlasseData(g);
+  const thead=EXP_COLS.map(h=>`<th>${escHtml(h)}</th>`).join('');
+  const tbody=rows.map(r=>`<tr>${rowToArr(r).map(v=>`<td>${escHtml(String(v??''))}</td>`).join('')}</tr>`).join('');
+  const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office"
+    xmlns:w="urn:schemas-microsoft-com:office:word"
+    xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8">
+<style>
+  /* mso-page-orientation ist die Word-spezifische Eigenschaft für Querformat.
+     @page size allein reicht für Word nicht – es braucht den Section-Wrapper. */
+  @page Section1 {
+    size: 29.7cm 21.0cm;
+    mso-page-orientation: landscape;
+    margin: 1.5cm;
+  }
+  div.Section1 { page: Section1; }
+  body{font-family:Arial,sans-serif;font-size:10pt;margin:0}
+  h2{font-size:13pt;margin-bottom:4pt}
+  p.sub{font-size:9pt;color:#555;margin-top:0;margin-bottom:8pt}
+  table{border-collapse:collapse;width:100%}
+  th,td{border:1px solid #999;padding:3pt 6pt;font-size:9pt}
+  th{background:#d0d8e4;font-weight:bold;text-align:left}
+</style></head>
+<body><div class="Section1">
+<h2>${escHtml(className)} (${rows.length} SuS)</h2>
+${tutor?`<p class="sub">Tutor: ${escHtml(tutor)}</p>`:''}
+<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
+</div></body></html>`;
+  const blob=new Blob([html],{type:'application/msword;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=`${className.replace(/\s/g,'_')}_Export.doc`; a.click();
+}
+
+/* PDF: vorbereitetes Druckfenster (offline, keine Library) – Nutzer wählt
+   im Druckdialog „Als PDF speichern". Querformat via @page. */
+function exportKlassePDF(g){
+  const {rows,className,tutor}=exportKlasseData(g);
+  const thead=EXP_COLS.map(h=>`<th>${escHtml(h)}</th>`).join('');
+  const tbody=rows.map(r=>`<tr>${rowToArr(r).map(v=>`<td>${escHtml(String(v??''))}</td>`).join('')}</tr>`).join('');
+  const win=window.open('','PDFExport','width=1000,height=700');
+  if(!win){ alert('Bitte Popups für diese Seite erlauben, um den PDF-Export zu nutzen.'); return; }
+  win.document.write(`<html><head><meta charset="UTF-8"><title>${escHtml(className)}</title>
+<style>
+  @page{size:A4 landscape;margin:1.4cm}
+  body{font-family:Arial,sans-serif;margin:0;color:#1e293b}
+  h2{font-size:15pt;margin:0 0 3pt}
+  p.sub{font-size:10pt;color:#555;margin:0 0 12pt}
+  table{border-collapse:collapse;width:100%}
+  th,td{border:1px solid #999;padding:4pt 7pt;font-size:9.5pt}
+  th{background:#d0d8e4;font-weight:bold;text-align:left}
+  @media print{.noprint{display:none}}
+  .noprint{margin:14px 0;padding:10px;background:#eef2f7;border-radius:6px;font-size:13px}
+  .noprint button{background:#2563eb;color:#fff;border:none;border-radius:5px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:600}
+</style></head>
+<body>
+<div class="noprint">
+  📄 Druckdialog öffnet automatisch. Ziel „<strong>Als PDF speichern</strong>" wählen.
+  <button onclick="window.print()">Erneut drucken</button>
+</div>
+<h2>${escHtml(className)} (${rows.length} SuS)</h2>
+${tutor?`<p class="sub">Tutor: ${escHtml(tutor)}</p>`:'<p class="sub">Kein Tutor zugewiesen</p>'}
+<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
+</body></html>`);
+  win.document.close(); win.focus();
+  setTimeout(()=>win.print(),350);
+}
+
+/* ── Sortier-Controls Klassenzuteilung ───────────────────────────────────── */
+document.getElementById('zuteilungSortSel').addEventListener('change',e=>{
+  zuteilungSortKey=e.target.value;
+  renderZuteilung();
+});
+document.getElementById('zuteilungSortDirBtn').addEventListener('click',()=>{
+  zuteilungSortDir*=-1;
+  document.getElementById('zuteilungSortDirBtn').textContent =
+    zuteilungSortDir===1 ? '▲ Aufsteigend' : '▼ Absteigend';
+  renderZuteilung();
+});
+
+/* ── Klassenübersicht Sub-Navigation ─────────────────────────────────────── */
+document.getElementById('klassenSubNav').addEventListener('click',e=>{
+  const btn=e.target.closest('.klass-btn');
+  if(!btn) return;
+  document.querySelectorAll('.klass-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  activeKlassenSub=btn.dataset.klass;
+  renderKlassenansicht();
+});
+
+/* Sortierbare Spaltenheader in Klassenübersicht (Event-Delegation, da Tabelle
+   bei jedem Render neu aufgebaut wird) */
+document.getElementById('klassenansichtContainer').addEventListener('click',e=>{
+  const th=e.target.closest('.sortable-th');
+  if(!th) return;
+  const g=+th.dataset.sortG, key=th.dataset.sortKey;
+  const cur=klassenansichtSort[g];
+  if(cur&&cur.key===key) cur.dir*=-1; /* Richtung umkehren bei erneutem Klick */
+  else klassenansichtSort[g]={key,dir:1};
+  renderKlassenansicht();
+});
+
+/* ── Drucken / PDF ───────────────────────────────────────────────────────── */
+document.getElementById('printBtn').onclick=()=>{
+  const win=window.open('','Print','width=800,height=600');
+  const html=`
+<html><head><title>Klasseneinteilung</title>
+<style>body{font-family:Arial,sans-serif;padding:20px}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #000;padding:5px;text-align:left}
+th{background:#eee}.tag{background:#3498db;color:#fff;border-radius:3px;padding:1px 4px;font-size:.8em;margin-right:2px}</style>
+</head><body>
+<h2>Klassenübersicht</h2>
+${groups.map((ids,g)=>`
+<h3>${klasseName(g)}</h3>
+<table><thead><tr><th>Name</th><th>Topf</th><th>Geschl.</th><th>AV</th><th>SV</th><th>Förderbedarf</th><th>Notiz</th></tr></thead>
+<tbody>${ids.map(id=>{
+  const p=persons.find(x=>x.id===id); if(!p) return '';
+  const tags=Object.entries(FOERDER).filter(([k])=>p[k]).map(([,l])=>`<span class="tag">${l}</span>`).join('');
+  return `<tr><td>${escHtml(displayName(p))}</td><td>${p.topf}</td><td>${p.geschlecht}</td>`
+        +`<td>${p.av||'–'}</td><td>${p.sv||'–'}</td><td>${tags||'–'}</td>`
+        +`<td>${escHtml(p.notiz||'')}</td></tr>`;
+}).join('')}</tbody></table>`).join('')}
+<h2>Tutor-Übersicht</h2>
+<table><thead><tr><th>Klasse</th><th>Tutor-Kürzel</th><th>Fächer-Kombi</th></tr></thead>
+<tbody>${groups.map((_,g)=>{
+  const ts=tutors[g].filter(t=>t.kürzel||t.fächer);
+  const rows=ts.length?ts:[{kürzel:'—',fächer:'—'}];
+  return rows.map((t,j)=>`<tr>${j===0?`<td rowspan="${rows.length}">>${klasseName(g)}</td>`:''}<td>${t.kürzel||'—'}</td><td>${t.fächer||'—'}</td></tr>`).join('');
+}).join('')}</tbody></table>
+</body></html>`;
+  win.document.write(html); win.document.close(); win.focus(); win.print();
+};
+
+/* ── Word-Download (alle Klassen, Querformat) ────────────────────────────── */
+function downloadAllAsWord(){
+  if(!persons.length){ alert('Keine Personen geladen.'); return; }
+  const thead=EXP_COLS.map(h=>`<th>${escHtml(h)}</th>`).join('');
+  let body='';
+  for(let g=0;g<5;g++){
+    const {rows,className,tutor}=exportKlasseData(g);
+    if(!rows.length) continue;
+    const tbody=rows.map(r=>`<tr>${rowToArr(r).map(v=>`<td>${escHtml(String(v??''))}</td>`).join('')}</tr>`).join('');
+    body+=`<h2>${escHtml(className)} (${rows.length} SuS)</h2>`
+         +(tutor?`<p class="sub">Tutor: ${escHtml(tutor)}</p>`:'')
+         +`<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`
+         +`<p style="page-break-after:always"></p>`;
+  }
+  const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office"
+    xmlns:w="urn:schemas-microsoft-com:office:word"
+    xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8">
+<style>
+  @page Section1 {
+    size: 29.7cm 21.0cm;
+    mso-page-orientation: landscape;
+    margin: 1.5cm;
+  }
+  div.Section1 { page: Section1; }
+  body{font-family:Arial,sans-serif;font-size:10pt;margin:0}
+  h2{font-size:13pt;margin-bottom:4pt;margin-top:0}
+  p.sub{font-size:9pt;color:#555;margin:0 0 8pt}
+  table{border-collapse:collapse;width:100%;margin-bottom:8pt}
+  th,td{border:1px solid #999;padding:3pt 6pt;font-size:9pt}
+  th{background:#d0d8e4;font-weight:bold;text-align:left}
+</style></head>
+<body><div class="Section1">${body}</div></body></html>`;
+  const blob=new Blob([html],{type:'application/msword;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download='Klasseneinteilung_Alle.doc'; a.click();
+}
+document.getElementById('printWordBtn').onclick=downloadAllAsWord;
+
+/* ── Tutor manual inputs ─────────────────────────────────────────────────── */
+function initTutorInputs(){
+  const tbody=document.querySelector('#tutorInputTable tbody');
+  if(!tbody) return;
+  tbody.innerHTML='';
+  const iS='width:100%;padding:.22rem .3rem;border:1px solid #ccc;border-radius:3px;font-size:.82rem;box-sizing:border-box';
+  const SEP='border-top:2px solid #95a5a6';
+  const LABELS=['1.','2.','3.'];
+  for(let i=0;i<5;i++){
+    for(let j=0;j<3;j++){
+      const t=tutors[i][j];
+      const tr=document.createElement('tr');
+      let cells='';
+      if(j===0)
+        cells=`<td rowspan="3" style="padding:.2rem .4rem;white-space:nowrap;vertical-align:middle;${SEP}">` + klasseName(i) + `</td>`;
+      cells+=`<td style="padding:.1rem .3rem;color:#7f8c8d;font-size:.75rem;white-space:nowrap;${j===0?SEP:''}">${LABELS[j]}</td>
+              <td style="padding:.1rem .3rem;${j===0?SEP:''}">
+                <input type="text" value="${escHtml(t.kürzel)}" placeholder="Kü."
+                       style="${iS}" data-ti="${i}" data-tj="${j}" data-tf="kürzel">
+              </td>
+              <td style="padding:.1rem .3rem;${j===0?SEP:''}">
+                <input type="text" value="${escHtml(t.fächer)}" placeholder="z.B. De/Ge"
+                       style="${iS}" data-ti="${i}" data-tj="${j}" data-tf="fächer">
+              </td>`;
+      tr.innerHTML=cells;
+      tbody.appendChild(tr);
+    }
+  }
+  tbody.querySelectorAll('input').forEach(inp=>{
+    inp.oninput=()=>{ tutors[+inp.dataset.ti][+inp.dataset.tj][inp.dataset.tf]=inp.value; renderTutors(); };
+  });
+}
+
+initTutorInputs();
+</script>
+
+</body>
+</html>
