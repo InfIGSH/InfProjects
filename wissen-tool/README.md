@@ -6,6 +6,9 @@ Transkripte, Kursseiten und PDF-Text in den vorhandenen `buch/eingang/`-Ordner.
 **Ohne API-Key.** Transkripte kommen aus der Untertitelspur, Kursseiten aus
 einem echten Browser mit der eigenen Anmeldung, PDFs aus dem Textlayer.
 
+> **Zum ersten Mal hier?** → [START.md](START.md) führt durch Einrichtung und
+> ersten Durchlauf. Diese Datei ist das Nachschlagewerk.
+
 ## Was es abdeckt — und was nicht
 
 Das Werkzeug ersetzt genau die mechanischen Schritte aus `ANLEITUNG.md`:
