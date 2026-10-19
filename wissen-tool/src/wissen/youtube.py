@@ -11,6 +11,7 @@ Ende, ist das Transkript unvollstaendig und das Werkzeug sagt es.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import shutil
 import subprocess
@@ -66,28 +67,141 @@ def _referer_opts(referer: str | None) -> dict:
     return {"http_headers": {"Referer": referer}} if referer else {}
 
 
+def abrufen(spur_url: str, referer: str | None = None) -> tuple[str, str]:
+    """Laedt eine Spurdatei und beschreibt, was zurueckkam.
+
+    Rueckgabe: (Text, Diagnose). Der Text kann unbrauchbar sein -- die
+    Diagnose sagt dann, warum: Laenge, Content-Type und Anfang der Antwort.
+    Ohne diese Angaben ist "leer oder nicht lesbar" nicht zu unterscheiden
+    von einer Fehlerseite oder einem unerwarteten Format.
+    """
+    try:
+        with _ydl(_referer_opts(referer)) as ydl:
+            antwort = ydl.urlopen(spur_url)
+            rohdaten = antwort.read()
+    except Exception as exc:
+        return "", f"Abruf fehlgeschlagen: {type(exc).__name__}: {exc}"
+
+    typ = "?"
+    with contextlib.suppress(Exception):
+        typ = antwort.headers.get("Content-Type") or "?"
+    text = rohdaten.decode("utf-8", "replace")
+    vorschau = re.sub(r"\s+", " ", text[:200]).strip()
+    return text, f"{len(rohdaten)} Bytes, Content-Type {typ}, Anfang: {vorschau!r}"
+
+
+def spur_kandidaten(info: dict, sprachen: list[str]) -> list[tuple[str, str, str, bool]]:
+    """Alle passenden Spuren als (sprache, format, url, automatisch), beste zuerst.
+
+    Mehrere Kandidaten, weil eine einzelne URL leer zurueckkommen kann --
+    dann ist die naechste dran, statt gleich aufzugeben.
+    """
+    manuell = info.get("subtitles") or {}
+    maschinell = info.get("automatic_captions") or {}
+    ergebnis: list[tuple[str, str, str, bool]] = []
+    gesehen: set[tuple[str, str]] = set()
+
+    for quelle, aus_maschine in ((manuell, False), (maschinell, True)):
+        for sprache in sprachen:
+            for key in passende_schluessel(quelle, sprache):
+                eintraege = quelle.get(key) or []
+                nach_vorzug = sorted(
+                    (e for e in eintraege if e.get("url")),
+                    key=lambda e: (
+                        FORMAT_VORZUG.index(e["ext"])
+                        if e.get("ext") in FORMAT_VORZUG else len(FORMAT_VORZUG)
+                    ),
+                )
+                for eintrag in nach_vorzug:
+                    marke = (key, eintrag["url"])
+                    if marke in gesehen:
+                        continue
+                    gesehen.add(marke)
+                    ergebnis.append((
+                        key,
+                        eintrag.get("ext") or "vtt",
+                        eintrag["url"],
+                        aus_maschine or ist_autogen(key),
+                    ))
+    return ergebnis
+
+
 def spur_laden(url: str, sprachen: list[str], referer: str | None = None) -> dict:
     """Holt die Untertitelspur einer beliebigen von yt-dlp erkannten URL.
 
     Taugt fuer YouTube wie fuer eingebettete Vimeo-Player -- dieselbe
-    Mechanik, nur eine andere Quelle. Rueckgabe: info, Kacheln (schon
-    entdoppelt), Sprache, ob automatisch erzeugt.
+    Mechanik, nur eine andere Quelle. Probiert alle passenden Spuren der
+    Reihe nach; scheitern alle, nennt der Fehler fuer jede den Grund.
     """
     info = _info(url, referer)
-    sprache, format_name, spur_url, automatisch = _waehle_spur(info, sprachen)
-    with _ydl(_referer_opts(referer)) as ydl:
-        rohdaten = ydl.urlopen(spur_url).read().decode("utf-8", "replace")
-    kacheln = vtt.entdoppeln(vtt.parse(rohdaten, format_name))
-    if not kacheln:
-        raise YoutubeFehler(
-            f"Die Untertitelspur ({sprache}/{format_name}) war leer oder nicht lesbar."
+    kandidaten = spur_kandidaten(info, sprachen)
+    if not kandidaten:
+        vorhanden = sorted(
+            set(info.get("subtitles") or {}) | set(info.get("automatic_captions") or {})
         )
-    return {
-        "info": info,
-        "kacheln": kacheln,
-        "sprache": sprache,
-        "automatisch": automatisch,
-    }
+        raise YoutubeFehler(
+            "Keine Untertitelspur in den gewuenschten Sprachen "
+            f"({', '.join(sprachen)}). Vorhanden: {', '.join(vorhanden) or 'keine'}. "
+            "Sprachen in wissen.toml unter [youtube] sprachen anpassen."
+        )
+
+    gruende: list[str] = []
+    for sprache, format_name, spur_url, automatisch in kandidaten:
+        text, diagnose = abrufen(spur_url, referer)
+        kacheln = vtt.entdoppeln(vtt.parse(text, format_name)) if text else []
+        if kacheln:
+            return {
+                "info": info,
+                "kacheln": kacheln,
+                "sprache": sprache,
+                "automatisch": automatisch,
+                "diagnose": diagnose,
+            }
+        gruende.append(f"{sprache}/{format_name}: {diagnose}")
+
+    raise YoutubeFehler(
+        "Keine der gefundenen Untertitelspuren liess sich lesen:\n  "
+        + "\n  ".join(gruende)
+    )
+
+
+def spur_probe(
+    url: str,
+    sprachen: list[str],
+    referer: str | None,
+    ordner: Path,
+    marke: str,
+) -> tuple[dict, list[dict]]:
+    """Versucht jede Spur und legt die Rohantwort ab -- fuer `wissen inspect`.
+
+    Nicht nur auflisten, sondern tatsaechlich abrufen: erst daran zeigt sich,
+    ob eine gefundene Spur auch Inhalt hat. Die Rohdatei bleibt liegen, damit
+    ein unerwartetes Format erkennbar ist.
+    """
+    info = _info(url, referer)
+    ergebnis: list[dict] = []
+    for nr, (sprache, format_name, spur_url, automatisch) in enumerate(
+        spur_kandidaten(info, sprachen)
+    ):
+        text, diagnose = abrufen(spur_url, referer)
+        datei = None
+        if text:
+            datei = ordner / (
+                f"{marke}.spur{nr}-{schema.slugify(sprache, 20)}.{format_name}"
+            )
+            with contextlib.suppress(Exception):
+                datei.write_text(text, encoding="utf-8")
+        kacheln = vtt.entdoppeln(vtt.parse(text, format_name)) if text else []
+        ergebnis.append({
+            "sprache": sprache,
+            "format": format_name,
+            "automatisch": automatisch,
+            "url": spur_url,
+            "diagnose": diagnose,
+            "kacheln": len(kacheln),
+            "datei": datei,
+        })
+    return info, ergebnis
 
 
 def spuren_auflisten(url: str, referer: str | None = None) -> dict:
@@ -142,46 +256,6 @@ def passende_schluessel(vorhanden, sprache: str) -> list[str]:
         key=lambda k: (ist_autogen(k), len(k), k),
     ))
     return reihenfolge
-
-
-def _waehle_spur(info: dict, sprachen: list[str]) -> tuple[str, str, str, bool]:
-    """Sucht die beste Untertitelspur.
-
-    Rueckgabe: (sprache, format, url, ist_automatisch). Von Hand erstellte
-    Untertitel gewinnen immer gegen automatische, weil sie Interpunktion haben.
-    """
-    manuell = info.get("subtitles") or {}
-    automatisch = info.get("automatic_captions") or {}
-
-    def suche(quelle: dict) -> tuple[str, str, str] | None:
-        for sprache in sprachen:
-            for key in passende_schluessel(quelle, sprache):
-                eintraege = quelle.get(key)
-                if not eintraege:
-                    continue
-                for ext in FORMAT_VORZUG:
-                    for eintrag in eintraege:
-                        if eintrag.get("ext") == ext and eintrag.get("url"):
-                            return key, ext, eintrag["url"]
-                for eintrag in eintraege:
-                    if eintrag.get("url"):
-                        return key, eintrag.get("ext") or "vtt", eintrag["url"]
-        return None
-
-    treffer = suche(manuell)
-    if treffer:
-        # Nicht blind False: Vimeos Maschinenuntertitel stehen hier mit drin.
-        return (*treffer, ist_autogen(treffer[0]))
-    treffer = suche(automatisch)
-    if treffer:
-        return (*treffer, True)
-
-    vorhanden = sorted(set(manuell) | set(automatisch))
-    raise YoutubeFehler(
-        "Keine Untertitelspur in den gewuenschten Sprachen "
-        f"({', '.join(sprachen)}). Vorhanden: {', '.join(vorhanden) or 'keine'}. "
-        "Sprachen in wissen.toml unter [youtube] sprachen anpassen."
-    )
 
 
 def _datum(info: dict) -> str | None:

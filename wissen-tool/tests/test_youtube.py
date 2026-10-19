@@ -5,18 +5,36 @@ import pytest
 from wissen import youtube
 
 
+def _beste_spur(info, sprachen):
+    """Die Spur, die `spur_laden` zuerst versuchen wuerde.
+
+    Der Abruf probiert alle Kandidaten der Reihe nach; welcher vorn steht,
+    entscheidet aber weiterhin ueber Sprache, Format und die Einordnung als
+    maschinell -- darum hier gezielt der erste.
+    """
+    kandidaten = youtube.spur_kandidaten(info, sprachen)
+    if not kandidaten:
+        vorhanden = sorted(
+            set(info.get("subtitles") or {}) | set(info.get("automatic_captions") or {})
+        )
+        raise youtube.YoutubeFehler(
+            f"Keine Spur fuer {sprachen}. Vorhanden: {', '.join(vorhanden) or 'keine'}."
+        )
+    return kandidaten[0]
+
+
 def test_waehle_spur_bevorzugt_manuelle_untertitel():
     info = {
         "subtitles": {"de": [{"ext": "vtt", "url": "https://m/de.vtt"}]},
         "automatic_captions": {"de": [{"ext": "vtt", "url": "https://a/de.vtt"}]},
     }
-    sprache, ext, url, automatisch = youtube._waehle_spur(info, ["de", "en"])
+    sprache, ext, url, automatisch = _beste_spur(info, ["de", "en"])
     assert (sprache, ext, url, automatisch) == ("de", "vtt", "https://m/de.vtt", False)
 
 
 def test_waehle_spur_nimmt_automatische_wenn_nichts_anderes_da_ist():
     info = {"automatic_captions": {"de": [{"ext": "json3", "url": "https://a/de.json"}]}}
-    sprache, ext, _, automatisch = youtube._waehle_spur(info, ["de"])
+    sprache, ext, _, automatisch = _beste_spur(info, ["de"])
     assert (sprache, ext, automatisch) == ("de", "json3", True)
 
 
@@ -27,13 +45,13 @@ def test_waehle_spur_haelt_die_sprachreihenfolge_ein():
             "de": [{"ext": "vtt", "url": "https://m/de.vtt"}],
         }
     }
-    assert youtube._waehle_spur(info, ["de", "en"])[0] == "de"
-    assert youtube._waehle_spur(info, ["en", "de"])[0] == "en"
+    assert _beste_spur(info, ["de", "en"])[0] == "de"
+    assert _beste_spur(info, ["en", "de"])[0] == "en"
 
 
 def test_waehle_spur_akzeptiert_grundsprache_statt_regionalvariante():
     info = {"subtitles": {"de": [{"ext": "vtt", "url": "https://m/de.vtt"}]}}
-    assert youtube._waehle_spur(info, ["de-DE"])[0] == "de"
+    assert _beste_spur(info, ["de-DE"])[0] == "de"
 
 
 # -- Vimeos Spurbenennung ------------------------------------------------
@@ -52,7 +70,7 @@ VIMEO_INFO = {
 def test_waehle_spur_findet_vimeos_autogen_spur():
     # Ein exakter Vergleich auf 'en'/'en-US' übersieht sie -- und der Abruf
     # bräche ab, obwohl die Spur vorhanden ist.
-    sprache, ext, url, automatisch = youtube._waehle_spur(
+    sprache, ext, url, automatisch = _beste_spur(
         VIMEO_INFO, ["en", "en-US", "de", "de-DE"]
     )
     assert sprache == "en-x-autogen"
@@ -63,7 +81,7 @@ def test_waehle_spur_findet_vimeos_autogen_spur():
 def test_vimeos_autogen_spur_gilt_als_automatisch():
     # Sonst stünde "Untertitel vom Kanal" im Kopf und der Text wirkte
     # verlässlicher als er ist -- relevant für die (?)-Markierungen.
-    assert youtube._waehle_spur(VIMEO_INFO, ["en"])[3] is True
+    assert _beste_spur(VIMEO_INFO, ["en"])[3] is True
 
 
 @pytest.mark.parametrize(
@@ -85,7 +103,7 @@ def test_echte_spur_gewinnt_gegen_autogen():
             "en": [{"ext": "vtt", "url": "https://v/echt.vtt"}],
         }
     }
-    sprache, _, url, automatisch = youtube._waehle_spur(info, ["en"])
+    sprache, _, url, automatisch = _beste_spur(info, ["en"])
     assert (sprache, url, automatisch) == ("en", "https://v/echt.vtt", False)
 
 
@@ -96,7 +114,7 @@ def test_regionalvariante_gewinnt_gegen_autogen():
             "en-GB": [{"ext": "vtt", "url": "https://v/gb.vtt"}],
         }
     }
-    assert youtube._waehle_spur(info, ["en"])[0] == "en-GB"
+    assert _beste_spur(info, ["en"])[0] == "en-GB"
 
 
 def test_passende_schluessel_reihenfolge():
@@ -133,6 +151,136 @@ def test_spuren_auflisten_fasst_beide_quellen_zusammen(monkeypatch):
     assert spuren["automatisch"] == ["de-x-autogen", "fr"]
 
 
+# -- Mehrere Kandidaten, Rückfall und Diagnose ---------------------------
+
+VTT = "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nHallo Welt.\n"
+
+
+def test_spur_kandidaten_haelt_die_reihenfolge():
+    info = {
+        "subtitles": {
+            "en-x-autogen": [{"ext": "vtt", "url": "u-auto"}],
+            "en": [{"ext": "json3", "url": "u-json"}, {"ext": "vtt", "url": "u-vtt"}],
+        },
+        "automatic_captions": {"en": [{"ext": "vtt", "url": "u-asr"}]},
+    }
+    kandidaten = youtube.spur_kandidaten(info, ["en"])
+    # Exakte Sprache vor autogen; vtt vor json3; manuell vor maschinell.
+    assert [(k[0], k[2]) for k in kandidaten] == [
+        ("en", "u-vtt"), ("en", "u-json"), ("en-x-autogen", "u-auto"), ("en", "u-asr"),
+    ]
+
+
+def test_spur_kandidaten_ohne_passende_sprache():
+    info = {"subtitles": {"fr": [{"ext": "vtt", "url": "u"}]}}
+    assert youtube.spur_kandidaten(info, ["de"]) == []
+
+
+def test_spur_laden_nimmt_die_naechste_spur_wenn_die_erste_leer_ist(monkeypatch):
+    # Der eigentliche Zweck des Rückfalls: eine gefundene Spur kann leer
+    # zurückkommen, ohne dass der Abruf fehlschlägt.
+    info = {
+        "subtitles": {
+            "en": [{"ext": "vtt", "url": "leer"}],
+            "en-x-autogen": [{"ext": "vtt", "url": "voll"}],
+        }
+    }
+    monkeypatch.setattr(youtube, "_info", lambda url, referer=None: info)
+    monkeypatch.setattr(
+        youtube, "abrufen",
+        lambda u, referer=None: ("", "0 Bytes") if u == "leer" else (VTT, "48 Bytes"),
+    )
+    spur = youtube.spur_laden("https://x", ["en"])
+    assert spur["sprache"] == "en-x-autogen"
+    assert spur["automatisch"] is True
+    assert [k.text for k in spur["kacheln"]] == ["Hallo Welt."]
+
+
+def test_spur_laden_nennt_jeden_grund_wenn_alle_scheitern(monkeypatch):
+    info = {
+        "subtitles": {
+            "en": [{"ext": "vtt", "url": "a"}],
+            "en-x-autogen": [{"ext": "vtt", "url": "b"}],
+        }
+    }
+    monkeypatch.setattr(youtube, "_info", lambda url, referer=None: info)
+    monkeypatch.setattr(
+        youtube, "abrufen",
+        lambda u, referer=None: ("", f"0 Bytes, Content-Type ?, Anfang: '' ({u})"),
+    )
+    with pytest.raises(youtube.YoutubeFehler) as fehler:
+        youtube.spur_laden("https://x", ["en"])
+    meldung = str(fehler.value)
+    assert "en/vtt" in meldung and "en-x-autogen/vtt" in meldung
+    assert "(a)" in meldung and "(b)" in meldung
+
+
+def test_spur_laden_meldet_unpassende_sprachen_getrennt(monkeypatch):
+    info = {"subtitles": {"fr": [{"ext": "vtt", "url": "u"}]}}
+    monkeypatch.setattr(youtube, "_info", lambda url, referer=None: info)
+    with pytest.raises(youtube.YoutubeFehler, match="Vorhanden: fr"):
+        youtube.spur_laden("https://x", ["de"])
+
+
+def test_spur_laden_meldet_html_statt_untertitel(monkeypatch):
+    # Eine Fehlerseite ist nicht dasselbe wie eine leere Antwort -- die
+    # Diagnose muss das unterscheidbar machen.
+    info = {"subtitles": {"en": [{"ext": "vtt", "url": "u"}]}}
+    monkeypatch.setattr(youtube, "_info", lambda url, referer=None: info)
+    monkeypatch.setattr(
+        youtube, "abrufen",
+        lambda u, referer=None: (
+            "<!DOCTYPE html><html>...",
+            "512 Bytes, Content-Type text/html, Anfang: '<!DOCTYPE html>'",
+        ),
+    )
+    with pytest.raises(youtube.YoutubeFehler, match="text/html"):
+        youtube.spur_laden("https://x", ["en"])
+
+
+def test_abrufen_beschreibt_einen_fehlgeschlagenen_abruf(monkeypatch):
+    class _Platzt:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def urlopen(self, url):
+            raise OSError("Verbindung abgewiesen")
+
+    monkeypatch.setattr(youtube, "_ydl", lambda extra=None: _Platzt())
+    text, diagnose = youtube.abrufen("https://x/spur.vtt")
+    assert text == ""
+    assert "OSError" in diagnose
+    assert "Verbindung abgewiesen" in diagnose
+
+
+def test_abrufen_beschreibt_eine_erfolgreiche_antwort(monkeypatch):
+    class _Antwort:
+        headers = {"Content-Type": "text/vtt"}
+
+        def read(self):
+            return VTT.encode("utf-8")
+
+    class _Ydl:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def urlopen(self, url):
+            return _Antwort()
+
+    monkeypatch.setattr(youtube, "_ydl", lambda extra=None: _Ydl())
+    text, diagnose = youtube.abrufen("https://x/spur.vtt")
+    assert text == VTT
+    assert "text/vtt" in diagnose
+    assert f"{len(VTT.encode())} Bytes" in diagnose
+    assert "WEBVTT" in diagnose
+
+
 def test_referer_wird_als_kopfzeile_gesetzt():
     # Domainbeschränkte Embeds antworten ohne passenden Referer nicht.
     assert youtube._referer_opts("https://kurs.de/l") == {
@@ -150,13 +298,13 @@ def test_waehle_spur_bevorzugt_vtt_vor_json3():
             ]
         }
     }
-    assert youtube._waehle_spur(info, ["de"])[1] == "vtt"
+    assert _beste_spur(info, ["de"])[1] == "vtt"
 
 
 def test_waehle_spur_nennt_vorhandene_sprachen_im_fehler():
     info = {"subtitles": {"fr": [{"ext": "vtt", "url": "x"}]}, "automatic_captions": {}}
     with pytest.raises(youtube.YoutubeFehler, match="fr"):
-        youtube._waehle_spur(info, ["de"])
+        _beste_spur(info, ["de"])
 
 
 def test_waehle_format_bleibt_unter_der_hoehengrenze():

@@ -108,31 +108,65 @@ def pruefe(
             else:
                 video_url, anbieter = video
                 zeilen += [f"- {anbieter}: `{video_url}`", ""]
-                zeilen.append(
-                    "Untertitelspuren laut yt-dlp (Referer = diese Kursseite):"
-                )
-                zeilen.append("")
                 try:
                     from . import youtube
 
-                    spuren = youtube.spuren_auflisten(video_url, referer=url)
-                    spur_vorhanden = bool(spuren["manuell"] or spuren["automatisch"])
+                    info, proben = youtube.spur_probe(
+                        video_url, cfg.sprachen, url, ausgabe,
+                        schema.dateiname_fuer_url(url),
+                    )
                     zeilen += [
-                        f"- Titel: {spuren['titel']!r}",
-                        f"- Dauer: {spuren['dauer']} s",
-                        f"- vom Anbieter erstellt: "
-                        f"{', '.join(spuren['manuell']) or 'keine'}",
-                        f"- automatisch erzeugt: "
-                        f"{', '.join(spuren['automatisch']) or 'keine'}",
+                        f"- Titel: {(info.get('title') or '?')!r}",
+                        f"- Dauer: {info.get('duration')} s",
+                        "",
                     ]
-                    if spur_vorhanden:
+                    if not proben:
+                        vorhanden = sorted(
+                            set(info.get("subtitles") or {})
+                            | set(info.get("automatic_captions") or {})
+                        )
                         zeilen += [
-                            "",
-                            "→ **`wissen kurs` kann das Transkript hier holen.**",
+                            "Keine Spur passt zu den Sprachen "
+                            f"{', '.join(cfg.sprachen)}.",
+                            f"Vorhanden: {', '.join(vorhanden) or 'keine'}.",
+                            "In wissen.toml unter [youtube] sprachen anpassen.",
                         ]
+                    else:
+                        zeilen.append(
+                            "Spuren, jeweils wirklich abgerufen "
+                            "(Referer = diese Kursseite):"
+                        )
+                        zeilen.append("")
+                        for probe in proben:
+                            art = "automatisch" if probe["automatisch"] else "vom Anbieter"
+                            zeilen += [
+                                f"- **{probe['sprache']}** ({probe['format']}, {art})",
+                                f"  - Antwort: {probe['diagnose']}",
+                                f"  - daraus gelesene Segmente: {probe['kacheln']}",
+                            ]
+                            if probe["datei"]:
+                                zeilen.append(f"  - Rohdatei: `{probe['datei']}`")
+                        zeilen.append("")
+                        brauchbar = [p for p in proben if p["kacheln"]]
+                        spur_vorhanden = bool(brauchbar)
+                        if brauchbar:
+                            zeilen.append(
+                                "→ **`wissen kurs` kann das Transkript hier holen** "
+                                f"(aus `{brauchbar[0]['sprache']}`, "
+                                f"{brauchbar[0]['kacheln']} Segmente)."
+                            )
+                        else:
+                            zeilen += [
+                                "→ **Spur gefunden, aber ohne lesbaren Inhalt.**",
+                                "",
+                                "Die Rohdatei oben zeigt, was zurueckkam. Haeufige",
+                                "Faelle: eine leere Antwort (0 Bytes), eine",
+                                "HTML-Fehlerseite statt der Untertitel, oder ein",
+                                "Format, das der Parser nicht kennt.",
+                            ]
                 except Exception as exc:
                     zeilen += [
-                        f"- **nicht abrufbar:** {exc}",
+                        f"- **Abruf fehlgeschlagen:** {type(exc).__name__}: {exc}",
                         "",
                         "Moegliche Gruende: das Video ist auf die Kursdomain"
                         " beschraenkt und braucht eine Anmeldung, die yt-dlp"
