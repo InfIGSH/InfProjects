@@ -217,7 +217,13 @@ wissen kurs "<URL der Lektion>" \
 Der Präfix ist der Dateiname deiner Kursdatei unter `kurse/` — so bleibt
 erkennbar, wohin das Material gehört.
 
-Steht danach `KEIN Transkript gefunden` in der Ausgabe:
+Bei Thinkspace steckt das Transkript nicht in der Seite, sondern im
+eingebetteten Vimeo-Player. Das Werkzeug klickt dessen Oberfläche nicht nach,
+sondern holt die Untertitelspur direkt — in der Ausgabe steht dann
+*„Transkript aus dem Vimeo-Player geholt"*, und im Dateikopf die
+Player-URL unter `Video:`.
+
+Steht stattdessen `KEIN Transkript` in der Ausgabe:
 
 ```bash
 wissen inspect "<dieselbe URL>"

@@ -52,9 +52,53 @@ def _ydl(extra: dict | None = None):
     return YoutubeDL(opts)
 
 
-def _info(url: str) -> dict:
-    with _ydl() as ydl:
+def _info(url: str, referer: str | None = None) -> dict:
+    with _ydl(_referer_opts(referer)) as ydl:
         return ydl.extract_info(url, download=False)
+
+
+def _referer_opts(referer: str | None) -> dict:
+    """Referer mitschicken -- Pflicht bei domainbeschraenkten Embeds.
+
+    Vimeo-Videos in Kursplattformen sind meist auf die Domain der Plattform
+    beschraenkt. Ohne passenden Referer verweigert Vimeo die Auskunft.
+    """
+    return {"http_headers": {"Referer": referer}} if referer else {}
+
+
+def spur_laden(url: str, sprachen: list[str], referer: str | None = None) -> dict:
+    """Holt die Untertitelspur einer beliebigen von yt-dlp erkannten URL.
+
+    Taugt fuer YouTube wie fuer eingebettete Vimeo-Player -- dieselbe
+    Mechanik, nur eine andere Quelle. Rueckgabe: info, Kacheln (schon
+    entdoppelt), Sprache, ob automatisch erzeugt.
+    """
+    info = _info(url, referer)
+    sprache, format_name, spur_url, automatisch = _waehle_spur(info, sprachen)
+    with _ydl(_referer_opts(referer)) as ydl:
+        rohdaten = ydl.urlopen(spur_url).read().decode("utf-8", "replace")
+    kacheln = vtt.entdoppeln(vtt.parse(rohdaten, format_name))
+    if not kacheln:
+        raise YoutubeFehler(
+            f"Die Untertitelspur ({sprache}/{format_name}) war leer oder nicht lesbar."
+        )
+    return {
+        "info": info,
+        "kacheln": kacheln,
+        "sprache": sprache,
+        "automatisch": automatisch,
+    }
+
+
+def spuren_auflisten(url: str, referer: str | None = None) -> dict:
+    """Welche Untertitelspuren gibt es? Fuer die Diagnose in `wissen inspect`."""
+    info = _info(url, referer)
+    return {
+        "titel": info.get("title"),
+        "dauer": info.get("duration"),
+        "manuell": sorted((info.get("subtitles") or {}).keys()),
+        "automatisch": sorted((info.get("automatic_captions") or {}).keys()),
+    }
 
 
 def _waehle_spur(info: dict, sprachen: list[str]) -> tuple[str, str, str, bool]:
@@ -115,17 +159,9 @@ def lade_transkript(
     lektion: str | None = None,
 ) -> Ergebnis:
     """Holt Transkript und Metadaten eines Videos und legt sie im Eingang ab."""
-    info = _info(url)
-    sprache, format_name, spur_url, automatisch = _waehle_spur(info, cfg.sprachen)
-
-    with _ydl() as ydl:
-        rohdaten = ydl.urlopen(spur_url).read().decode("utf-8", "replace")
-
-    kacheln = vtt.entdoppeln(vtt.parse(rohdaten, format_name))
-    if not kacheln:
-        raise YoutubeFehler(
-            f"Die Untertitelspur ({sprache}/{format_name}) war leer oder nicht lesbar."
-        )
+    spur = spur_laden(url, cfg.sprachen)
+    info, kacheln = spur["info"], spur["kacheln"]
+    sprache, automatisch = spur["sprache"], spur["automatisch"]
     text = vtt.zu_text(kacheln, cfg.marke_alle, schon_entdoppelt=True)
 
     dauer = info.get("duration")

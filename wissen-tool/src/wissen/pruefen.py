@@ -75,14 +75,62 @@ def pruefe(
                     zeilen.append(f"- `h1`: {(kopfzeile.inner_text() or '').strip()!r}")
             zeilen.append("")
 
-            rahmen = [seite] + list(seite.frames)
+            rahmen = web.rahmen_von(seite)
             zeilen += ["## Frames", ""]
             for nr, frame in enumerate(rahmen):
-                beschreibung = "Hauptdokument" if nr == 0 else _frame_name(frame, nr)
+                beschreibung = (
+                    f"Hauptdokument: {frame.url}" if nr == 0 else _frame_name(frame, nr)
+                )
                 laenge = 0
                 with contextlib.suppress(Exception):
                     laenge = len(frame.evaluate("() => document.body.innerText || ''"))
                 zeilen.append(f"- {beschreibung} — {laenge} Zeichen Text")
+            zeilen.append("")
+
+            # Der Lektionstext steckt oft in einem eigenen Frame; das
+            # Hauptdokument traegt dann nur die Navigationshuelle.
+            zeilen += ["## Seitentext", ""]
+            seitentext = web._hauptinhalt(rahmen, regeln)
+            if seitentext:
+                zeilen += [
+                    f"- {len(seitentext)} Zeichen, aus dem textreichsten Frame",
+                    f"- Anfang: {seitentext[:200]!r}",
+                ]
+            else:
+                zeilen.append("- kein Fliesstext gefunden")
+            zeilen.append("")
+
+            zeilen += ["## Eingebetteter Player", ""]
+            video = web.finde_video(rahmen)
+            if video is None:
+                zeilen.append("- keiner gefunden")
+            else:
+                video_url, anbieter = video
+                zeilen += [f"- {anbieter}: `{video_url}`", ""]
+                zeilen.append(
+                    "Untertitelspuren laut yt-dlp (Referer = diese Kursseite):"
+                )
+                zeilen.append("")
+                try:
+                    from . import youtube
+
+                    spuren = youtube.spuren_auflisten(video_url, referer=url)
+                    zeilen += [
+                        f"- Titel: {spuren['titel']!r}",
+                        f"- Dauer: {spuren['dauer']} s",
+                        f"- vom Anbieter erstellt: "
+                        f"{', '.join(spuren['manuell']) or 'keine'}",
+                        f"- automatisch erzeugt: "
+                        f"{', '.join(spuren['automatisch']) or 'keine'}",
+                    ]
+                except Exception as exc:
+                    zeilen += [
+                        f"- **nicht abrufbar:** {exc}",
+                        "",
+                        "Moegliche Gruende: das Video ist auf die Kursdomain"
+                        " beschraenkt und braucht eine Anmeldung, die yt-dlp"
+                        " nicht hat, oder der Anbieter wird nicht unterstuetzt.",
+                    ]
             zeilen.append("")
 
             zeilen += ["## Transkript-Kandidaten", ""]

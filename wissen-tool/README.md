@@ -47,8 +47,26 @@ Gefunden wird das Panel über die **Dichte der Zeitmarken**: ein Container mit
 mindestens fünf Kindelementen, deren ganzer Text eine Zeitangabe ist
 (`0:42`, `12:57`), ist fast immer das Transkript – unabhängig davon, wie die
 Plattform ihre CSS-Klassen nennt. Erst danach wird auf Benennungen wie
-`transcript` geschaut. Findet beides nichts, sagt `wissen inspect`, was auf
-der Seite steht.
+`transcript` geschaut.
+
+Auch der Lektionstext wird in allen Frames gesucht, nicht nur im
+Hauptdokument: Kursplattformen laden ihn regelmäßig in ein eigenes iframe,
+im Hauptdokument steht dann nur die Navigationshülle.
+
+### Wenn das Transkript gar nicht im DOM steht
+
+Häufigster Fall bei eingebetteten Playern (Thinkspace nutzt Vimeo): das
+Transkript-Panel ist Teil der Player-Oberfläche und existiert erst, nachdem
+man ein Icon angeklickt hat. Statt diese Oberfläche nachzuklicken, holt das
+Werkzeug die **Untertitelspur selbst** – per yt-dlp, mit der Kursseite als
+Referer, weil solche Embeds meist auf die Plattform-Domain beschränkt sind.
+
+Das ist nicht nur robuster, es ist auch besser: echte Zeitstempel aus der
+VTT-Datei statt abgeschriebener Oberfläche, und dieselbe Entdoppelung,
+Zeitmarken-Aufteilung und Abdeckungsprüfung wie bei YouTube.
+
+Erkannt werden Vimeo, YouTube und Wistia. Findet das Werkzeug weder Panel
+noch Player, sagt `wissen inspect`, was auf der Seite steht.
 
 ## Fortschritts-Buttons
 
@@ -248,11 +266,16 @@ Zeitpunkt.
 .venv/bin/python -m pytest
 ```
 
-129 Tests über die netzunabhängigen Teile: Untertitel-Verarbeitung samt
-Entdoppelung, Abdeckungsrechnung, Dateikopf, Ablage und Verschieben,
-`quellen.md`-Entwurf, PDF-Einlesen, Konfiguration, Spur- und Formatwahl und
-die Sperrliste für Fortschritts-Buttons. Was Netz braucht – der YouTube-Abruf
-und die Browser-Automatisierung – ist nicht automatisch getestet.
+154 Tests über die netzunabhängigen Teile: Untertitel-Verarbeitung samt
+Entdoppelung, Abdeckungsrechnung, Dateikopf und Dateinamen, Ablage und
+Verschieben, `quellen.md`-Entwurf, PDF-Einlesen, Konfiguration, Spur- und
+Formatwahl, Player-Erkennung, Frame-Auswahl beim Seitentext und die
+Sperrliste für Fortschritts-Buttons.
+
+Was Netz braucht, ist nicht automatisch getestet: der YouTube- und
+Vimeo-Abruf und die Browser-Automatisierung. Für die Player-Erkennung prüft
+ein Test aber immerhin, dass yt-dlp für jede erkannte URL-Form tatsächlich
+einen Extraktor hat — ohne Netzzugriff.
 
 ## Rechtliches
 

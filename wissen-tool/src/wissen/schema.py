@@ -24,7 +24,7 @@ ROHMATERIAL_HINWEIS = "Rohmaterial — wird nicht ins Buch zitiert."
 #: Reihenfolge der Kopffelder.
 KOPFFELDER = [
     "Titel", "Kanal", "Plattform", "Kurs", "Modul", "Lektion",
-    "URL", "Datei", "Veröffentlicht", "Erfassungsdatum", "Abdeckung",
+    "URL", "Video", "Datei", "Veröffentlicht", "Erfassungsdatum", "Abdeckung",
     "Screenshots", "Original",
 ]
 

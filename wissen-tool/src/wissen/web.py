@@ -23,7 +23,7 @@ import contextlib
 import re
 from pathlib import Path
 
-from . import erkennung, schema
+from . import erkennung, schema, vtt
 from .config import Konfig
 from .store import Ablage
 
@@ -38,6 +38,15 @@ VERBOTENE_TEXTE = [
 ]
 
 MIN_TRANSKRIPT = 200  # Zeichen; darunter ist es eher eine Beschriftung
+
+#: Eingebettete Player, deren Untertitelspur yt-dlp direkt holen kann.
+#: Das ist der verlaessliche Weg: die Spur statt der Player-Oberflaeche.
+VIDEO_MUSTER = [
+    (re.compile(r"player\.vimeo\.com/video/"), "Vimeo"),
+    (re.compile(r"(?:www\.)?youtube(?:-nocookie)?\.com/embed/"), "YouTube"),
+    (re.compile(r"(?:www\.)?youtube\.com/watch"), "YouTube"),
+    (re.compile(r"wistia\.(?:net|com)/(?:embed/)?(?:iframe|medias)/"), "Wistia"),
+]
 
 
 class WebFehler(RuntimeError):
@@ -139,56 +148,109 @@ def _oeffne_panel(seite, regeln: dict, warte_ms: int) -> list[str]:
     return meldungen
 
 
-def _hauptinhalt(seite, regeln: dict) -> str:
-    """Fliesstext der Seite, moeglichst ohne Navigation und Fusszeile."""
-    for selektor in regeln.get("inhalt") or []:
-        element = seite.query_selector(selektor)
-        if element:
-            text = (element.inner_text() or "").strip()
-            if len(text) > 50:
-                return text
+def rahmen_von(seite) -> list:
+    """Alle Frames der Seite, Hauptframe an Position 0.
 
+    `page.frames` enthaelt den Hauptframe schon -- ihn zusaetzlich
+    voranzustellen wuerde ihn doppelt verarbeiten.
+    """
+    return list(seite.frames)
+
+
+def finde_video(rahmen: list) -> tuple[str, str] | None:
+    """Sucht einen eingebetteten Player. Rueckgabe: (URL, Anbietername)."""
+    for frame in rahmen:
+        url = frame.url or ""
+        for muster, anbieter in VIDEO_MUSTER:
+            if muster.search(url):
+                # Der Zeitanker (#t=00h07m05s) ist nur die Abspielposition
+                # und verwirrt manche Extraktoren.
+                return url.split("#")[0], anbieter
+    return None
+
+
+def _text_aus_selektor(frame, selektor: str) -> str:
+    with contextlib.suppress(Exception):
+        element = frame.query_selector(selektor)
+        if element:
+            return (element.inner_text() or "").strip()
+    return ""
+
+
+def _inhalt_geraten(frame) -> str:
+    """Fliesstext eines Frames ohne Konfiguration -- mit Plausibilitaetsgrenzen.
+
+    Die Laengengrenzen sind hier richtig: sie sortieren Navigationsreste und
+    leere Huellen aus. Bei einem konfigurierten Selektor gelten sie nicht,
+    siehe `_hauptinhalt`.
+    """
     try:
         import trafilatura
     except ImportError:
         trafilatura = None
     if trafilatura is not None:
         with contextlib.suppress(Exception):
-            text = trafilatura.extract(
-                seite.content(), include_comments=False,
-                include_tables=True, favor_recall=True,
-            )
-            if text and len(text.strip()) > 100:
-                return text.strip()
+            html = frame.content()
+            if html and len(html) > 50:
+                text = trafilatura.extract(
+                    html, include_comments=False,
+                    include_tables=True, favor_recall=True,
+                )
+                if text and len(text.strip()) > 100:
+                    return text.strip()
 
     for selektor in ("main", "article", "[role='main']", "body"):
-        element = seite.query_selector(selektor)
-        if element:
-            text = (element.inner_text() or "").strip()
-            if len(text) > 100:
-                return text
-    return (seite.inner_text("body") or "").strip()
+        text = _text_aus_selektor(frame, selektor)
+        if len(text) > 100:
+            return text
+    return ""
 
 
-def _transkript(seite, regeln: dict) -> tuple[str, str]:
-    """Holt den Transkript-Text. Rueckgabe: (text, wie_gefunden)."""
+def _hauptinhalt(rahmen: list, regeln: dict) -> str:
+    """Fliesstext der Seite -- quer ueber alle Frames.
+
+    Kursplattformen laden den Lektionstext regelmaessig in ein eigenes
+    iframe; im Hauptdokument steht dann nur die Navigationshuelle. Genommen
+    wird darum der Frame mit dem meisten Text, nicht das Hauptdokument.
+
+    Ein konfigurierter Selektor geht aber immer vor: wer ihn eintraegt, weiss
+    besser, wo der Lektionstext steht -- auch wenn eine Navigationsspalte
+    anderswo mehr Zeichen hat.
+    """
+    for selektor in regeln.get("inhalt") or []:
+        bester = ""
+        for frame in rahmen:
+            text = _text_aus_selektor(frame, selektor)
+            if len(text) > len(bester):
+                bester = text
+        if bester:
+            return bester
+
+    bester = ""
+    for frame in rahmen:
+        text = _inhalt_geraten(frame)
+        if len(text) > len(bester):
+            bester = text
+    return bester
+
+
+def _transkript_aus_dom(rahmen: list, regeln: dict) -> tuple[str, str]:
+    """Sucht ein Transkript-Panel im DOM. Rueckgabe: (text, wie_gefunden)."""
     # Ausdrueckliche Konfiguration gewinnt -- in allen Frames gesucht.
     for selektor in regeln.get("transkript") or []:
-        for rahmen in [seite] + list(seite.frames):
+        for frame in rahmen:
             with contextlib.suppress(Exception):
-                element = rahmen.query_selector(selektor)
+                element = frame.query_selector(selektor)
                 if element:
                     text = (element.inner_text() or "").strip()
                     if len(text) >= MIN_TRANSKRIPT:
                         return _aufraeumen(text), f"Selektor {selektor}"
 
-    kandidat, rahmen = erkennung.bester_kandidat(
-        [seite] + list(seite.frames), MIN_TRANSKRIPT
-    )
+    kandidat, frame = erkennung.bester_kandidat(rahmen, MIN_TRANSKRIPT)
     if kandidat is None:
         return "", ""
     with contextlib.suppress(Exception):
-        element = rahmen.query_selector(kandidat["selektor"])
+        element = frame.query_selector(kandidat["selektor"])
         if element:
             text = (element.inner_text() or "").strip()
             if len(text) >= MIN_TRANSKRIPT:
@@ -220,6 +282,43 @@ def _letzte_zeitmarke(text: str) -> float | None:
         with contextlib.suppress(ValueError):
             werte.append(schema.zeit_zu_sekunden(marke))
     return max(werte) if werte else None
+
+
+def _transkript_vom_player(
+    cfg: Konfig, video: tuple[str, str], seiten_url: str, felder: dict
+) -> tuple[str, dict, str]:
+    """Holt die Untertitelspur eines eingebetteten Players per yt-dlp.
+
+    Der Referer ist die Kursseite -- Embeds in Kursplattformen sind meist auf
+    deren Domain beschraenkt und antworten ohne ihn nicht.
+    """
+    from . import youtube
+
+    video_url, anbieter = video
+    felder["Video"] = f"{anbieter}: {video_url}"
+    try:
+        spur = youtube.spur_laden(video_url, cfg.sprachen, referer=seiten_url)
+    except Exception as exc:
+        felder["Abdeckung"] = f"KEIN Transkript — {anbieter}-Spur nicht abrufbar"
+        return "", felder, (
+            f"{anbieter}-Video gefunden ({video_url}), aber keine Untertitelspur "
+            f"abrufbar: {exc}"
+        )
+
+    text = vtt.zu_text(spur["kacheln"], cfg.marke_alle, schon_entdoppelt=True)
+    dauer = (spur["info"] or {}).get("duration")
+    letzte = spur["kacheln"][-1].ende
+    luecke = schema.abdeckung_luecke(letzte, dauer)
+
+    felder["Abdeckung"] = schema.abdeckung(letzte, dauer, spur["automatisch"])
+    if luecke is not None and luecke > cfg.max_luecke:
+        felder["Abdeckung"] += f" — UNVOLLSTÄNDIG, {int(luecke)} s fehlen"
+    nachricht = (
+        f"Transkript aus dem {anbieter}-Player geholt "
+        f"(Sprache {spur['sprache']}, "
+        f"{'automatisch' if spur['automatisch'] else 'vom Anbieter'})."
+    )
+    return text, felder, nachricht
 
 
 # -- Hauptfunktion -------------------------------------------------------
@@ -267,8 +366,9 @@ def lade_seite(
                 if 3 < len(h1) < 200:
                     seiten_titel = h1
 
-        transkript, wie = _transkript(seite, regeln)
-        seitentext = _aufraeumen(_hauptinhalt(seite, regeln))
+        rahmen = rahmen_von(seite)
+        transkript, wie = _transkript_aus_dom(rahmen, regeln)
+        seitentext = _aufraeumen(_hauptinhalt(rahmen, regeln))
 
         kennung = schema.slugify(lektion or seiten_titel, 50)
         felder = {
@@ -280,6 +380,7 @@ def lade_seite(
             "URL": url,
             "Erfassungsdatum": schema.heute(),
         }
+
         if transkript:
             letzte = _letzte_zeitmarke(transkript)
             felder["Abdeckung"] = (
@@ -287,11 +388,21 @@ def lade_seite(
                 if letzte else f"Transkript vorhanden ({wie})"
             )
         else:
-            felder["Abdeckung"] = "KEIN Transkript gefunden — nur Seitentext"
-            meldungen.append(
-                "Kein Transkript gefunden. 'wissen inspect <url>' zeigt, was auf "
-                "der Seite steht, und schlaegt einen Selektor vor."
-            )
+            # Kein Panel im DOM -- dann die Untertitelspur des eingebetteten
+            # Players holen. Das ist der verlaesslichere Weg: echte
+            # Zeitstempel statt abgeschriebener Oberflaeche.
+            video = finde_video(rahmen)
+            if video:
+                transkript, felder, nachricht = _transkript_vom_player(
+                    cfg, video, url, felder
+                )
+                meldungen.append(nachricht)
+            else:
+                felder["Abdeckung"] = "KEIN Transkript gefunden — nur Seitentext"
+                meldungen.append(
+                    "Kein Transkript im DOM und kein eingebetteter Player. "
+                    "'wissen inspect <url>' zeigt, was auf der Seite steht."
+                )
 
         pfad = ablage.eingang_pfad(praefix, kennung)
 
