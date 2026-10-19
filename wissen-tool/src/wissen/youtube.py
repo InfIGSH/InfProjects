@@ -93,12 +93,55 @@ def spur_laden(url: str, sprachen: list[str], referer: str | None = None) -> dic
 def spuren_auflisten(url: str, referer: str | None = None) -> dict:
     """Welche Untertitelspuren gibt es? Fuer die Diagnose in `wissen inspect`."""
     info = _info(url, referer)
+    manuell = sorted((info.get("subtitles") or {}).keys())
     return {
         "titel": info.get("title"),
         "dauer": info.get("duration"),
-        "manuell": sorted((info.get("subtitles") or {}).keys()),
-        "automatisch": sorted((info.get("automatic_captions") or {}).keys()),
+        # Spuren mit Autogen-Kuerzel stehen bei Vimeo unter den regulaeren,
+        # gehoeren aber zu den maschinellen -- hier getrennt ausgewiesen.
+        "manuell": [k for k in manuell if not ist_autogen(k)],
+        "automatisch": sorted(
+            [k for k in manuell if ist_autogen(k)]
+            + list((info.get("automatic_captions") or {}).keys())
+        ),
     }
+
+
+def ist_autogen(schluessel: str) -> bool:
+    """Erkennt automatisch erzeugte Spuren am Sprachkuerzel.
+
+    Vimeo listet seine Maschinenuntertitel als `en-x-autogen` unter den
+    regulaeren Spuren, nicht unter den automatischen. Ohne diese Pruefung
+    waeren sie als vom Anbieter erstellt ausgewiesen -- und damit
+    vertrauenswuerdiger, als sie sind.
+    """
+    klein = (schluessel or "").lower()
+    return "autogen" in klein or klein.endswith(("-auto", "-asr"))
+
+
+def passende_schluessel(vorhanden, sprache: str) -> list[str]:
+    """Spurschluessel, die zu einer Wunschsprache passen -- beste zuerst.
+
+    Ein Wunsch nach `en` muss auch `en-US` und `en-x-autogen` finden; ein
+    exakter Vergleich uebersieht genau die Spuren, die tatsaechlich da sind.
+    Von Hand erstellte Varianten gehen vor automatisch erzeugten.
+    """
+    gewuenscht = sprache.lower()
+    basis = gewuenscht.split("-")[0]
+    reihenfolge: list[str] = []
+
+    def dazu(kandidaten):
+        for key in kandidaten:
+            if key not in reihenfolge:
+                reihenfolge.append(key)
+
+    dazu([k for k in vorhanden if k.lower() == gewuenscht])
+    dazu([k for k in vorhanden if k.lower() == basis])
+    dazu(sorted(
+        (k for k in vorhanden if k.lower().startswith(basis + "-")),
+        key=lambda k: (ist_autogen(k), len(k), k),
+    ))
+    return reihenfolge
 
 
 def _waehle_spur(info: dict, sprachen: list[str]) -> tuple[str, str, str, bool]:
@@ -112,7 +155,7 @@ def _waehle_spur(info: dict, sprachen: list[str]) -> tuple[str, str, str, bool]:
 
     def suche(quelle: dict) -> tuple[str, str, str] | None:
         for sprache in sprachen:
-            for key in (sprache, sprache.split("-")[0]):
+            for key in passende_schluessel(quelle, sprache):
                 eintraege = quelle.get(key)
                 if not eintraege:
                     continue
@@ -127,7 +170,8 @@ def _waehle_spur(info: dict, sprachen: list[str]) -> tuple[str, str, str, bool]:
 
     treffer = suche(manuell)
     if treffer:
-        return (*treffer, False)
+        # Nicht blind False: Vimeos Maschinenuntertitel stehen hier mit drin.
+        return (*treffer, ist_autogen(treffer[0]))
     treffer = suche(automatisch)
     if treffer:
         return (*treffer, True)

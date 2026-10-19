@@ -212,3 +212,85 @@ def test_hauptinhalt_faellt_auf_heuristik_zurueck_wenn_selektor_nicht_passt():
 
 def test_hauptinhalt_ohne_text():
     assert web._hauptinhalt([_FakeFrame(url="https://kurs.de/l")], {}) == ""
+
+
+# -- Transkript aus dem eingebetteten Player -----------------------------
+
+VIDEO = ("https://player.vimeo.com/video/957204710?h=4f2cb2a359", "Vimeo")
+SEITE = "https://campus.thinkspace.ac.uk/student/course/view/329/item/43336/0/709"
+
+
+def _cfg(tmp_path):
+    from wissen.config import Konfig
+
+    return Konfig(
+        ablage=tmp_path, browser_profil=tmp_path / "p",
+        sprachen=["en", "en-US", "de", "de-DE"],
+    )
+
+
+def _spur(bis: int, dauer: int | None):
+    from wissen import vtt as vtt_modul
+
+    kacheln = [
+        vtt_modul.Kachel(i, i + 5, f"Satz {i}") for i in range(0, bis + 1, 5)
+    ]
+    return {
+        "info": {"title": "HTWCM VT0.1 - Intro", "duration": dauer},
+        "kacheln": kacheln,
+        "sprache": "en-x-autogen",
+        "automatisch": True,
+    }
+
+
+def test_player_transkript_schreibt_die_abdeckungszeile(tmp_path, monkeypatch):
+    # Echte Werte der Thinkspace-Lektion: 509 s Video, Spur bis 505 s.
+    from wissen import youtube
+
+    monkeypatch.setattr(
+        youtube, "spur_laden", lambda *a, **k: _spur(500, 509)
+    )
+    text, felder, nachricht = web._transkript_vom_player(
+        _cfg(tmp_path), VIDEO, SEITE, {}
+    )
+    assert felder["Abdeckung"] == "Transkript 0:00–8:25 von 8:29 (Auto-Captions)"
+    assert felder["Video"] == f"Vimeo: {VIDEO[0]}"
+    assert text.startswith("[00:00] ")
+    assert "Vimeo-Player geholt" in nachricht
+
+
+def test_player_transkript_meldet_luecke_zum_videoende(tmp_path, monkeypatch):
+    from wissen import youtube
+
+    monkeypatch.setattr(youtube, "spur_laden", lambda *a, **k: _spur(200, 509))
+    _, felder, _ = web._transkript_vom_player(_cfg(tmp_path), VIDEO, SEITE, {})
+    assert "UNVOLLSTÄNDIG" in felder["Abdeckung"]
+    # Gemessen wird ab dem Ende der letzten Kachel (205 s), nicht ab ihrem Start.
+    assert "304 s fehlen" in felder["Abdeckung"]
+
+
+def test_player_transkript_ohne_bekannte_videolaenge(tmp_path, monkeypatch):
+    from wissen import youtube
+
+    monkeypatch.setattr(youtube, "spur_laden", lambda *a, **k: _spur(200, None))
+    _, felder, _ = web._transkript_vom_player(_cfg(tmp_path), VIDEO, SEITE, {})
+    assert felder["Abdeckung"] == "Transkript 0:00–3:25 (Auto-Captions)"
+    assert "UNVOLLSTÄNDIG" not in felder["Abdeckung"]
+
+
+def test_player_transkript_bei_nicht_abrufbarer_spur(tmp_path, monkeypatch):
+    from wissen import youtube
+
+    def platzt(*a, **k):
+        raise youtube.YoutubeFehler("Vimeo verweigert die Auskunft")
+
+    monkeypatch.setattr(youtube, "spur_laden", platzt)
+    text, felder, nachricht = web._transkript_vom_player(
+        _cfg(tmp_path), VIDEO, SEITE, {}
+    )
+    assert text == ""
+    assert "KEIN Transkript" in felder["Abdeckung"]
+    # Die Player-URL bleibt im Kopf stehen, auch wenn der Abruf scheitert --
+    # sonst ist später nicht nachvollziehbar, woran es lag.
+    assert felder["Video"] == f"Vimeo: {VIDEO[0]}"
+    assert "verweigert die Auskunft" in nachricht

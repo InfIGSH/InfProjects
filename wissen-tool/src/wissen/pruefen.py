@@ -101,6 +101,7 @@ def pruefe(
             zeilen.append("")
 
             zeilen += ["## Eingebetteter Player", ""]
+            spur_vorhanden = False
             video = web.finde_video(rahmen)
             if video is None:
                 zeilen.append("- keiner gefunden")
@@ -115,6 +116,7 @@ def pruefe(
                     from . import youtube
 
                     spuren = youtube.spuren_auflisten(video_url, referer=url)
+                    spur_vorhanden = bool(spuren["manuell"] or spuren["automatisch"])
                     zeilen += [
                         f"- Titel: {spuren['titel']!r}",
                         f"- Dauer: {spuren['dauer']} s",
@@ -123,6 +125,11 @@ def pruefe(
                         f"- automatisch erzeugt: "
                         f"{', '.join(spuren['automatisch']) or 'keine'}",
                     ]
+                    if spur_vorhanden:
+                        zeilen += [
+                            "",
+                            "→ **`wissen kurs` kann das Transkript hier holen.**",
+                        ]
                 except Exception as exc:
                     zeilen += [
                         f"- **nicht abrufbar:** {exc}",
@@ -163,7 +170,15 @@ def pruefe(
                         bester = (rang, kandidat)
                 zeilen.append("")
 
-            if not gefunden:
+            if not gefunden and spur_vorhanden:
+                # Kein Mangel: die Spur des Players ist die bessere Quelle.
+                zeilen += [
+                    "Keine im DOM — wird hier auch nicht gebraucht, weil der",
+                    "eingebettete Player eine Untertitelspur hat (siehe oben).",
+                    "`wissen kurs` nimmt diese Spur.",
+                    "",
+                ]
+            elif not gefunden:
                 zeilen += [
                     "Keine Kandidaten gefunden. Moegliche Gruende:",
                     "",

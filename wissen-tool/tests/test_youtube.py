@@ -36,6 +36,111 @@ def test_waehle_spur_akzeptiert_grundsprache_statt_regionalvariante():
     assert youtube._waehle_spur(info, ["de-DE"])[0] == "de"
 
 
+# -- Vimeos Spurbenennung ------------------------------------------------
+# Echter Fall aus einer Thinkspace-Lektion: die einzige Spur heißt
+# 'en-x-autogen' und steht unter den regulären Untertiteln, nicht unter den
+# automatischen.
+
+VIMEO_INFO = {
+    "title": "HTWCM VT0.1 - Intro",
+    "duration": 509,
+    "subtitles": {"en-x-autogen": [{"ext": "vtt", "url": "https://v/en.vtt"}]},
+    "automatic_captions": {},
+}
+
+
+def test_waehle_spur_findet_vimeos_autogen_spur():
+    # Ein exakter Vergleich auf 'en'/'en-US' übersieht sie -- und der Abruf
+    # bräche ab, obwohl die Spur vorhanden ist.
+    sprache, ext, url, automatisch = youtube._waehle_spur(
+        VIMEO_INFO, ["en", "en-US", "de", "de-DE"]
+    )
+    assert sprache == "en-x-autogen"
+    assert ext == "vtt"
+    assert url == "https://v/en.vtt"
+
+
+def test_vimeos_autogen_spur_gilt_als_automatisch():
+    # Sonst stünde "Untertitel vom Kanal" im Kopf und der Text wirkte
+    # verlässlicher als er ist -- relevant für die (?)-Markierungen.
+    assert youtube._waehle_spur(VIMEO_INFO, ["en"])[3] is True
+
+
+@pytest.mark.parametrize(
+    "schluessel", ["en-x-autogen", "de-x-autogen", "EN-X-AUTOGEN", "en-auto", "en-asr"]
+)
+def test_ist_autogen_erkennt_maschinenspuren(schluessel):
+    assert youtube.ist_autogen(schluessel)
+
+
+@pytest.mark.parametrize("schluessel", ["en", "en-US", "de-DE", "", None])
+def test_ist_autogen_bei_echten_spuren(schluessel):
+    assert not youtube.ist_autogen(schluessel)
+
+
+def test_echte_spur_gewinnt_gegen_autogen():
+    info = {
+        "subtitles": {
+            "en-x-autogen": [{"ext": "vtt", "url": "https://v/auto.vtt"}],
+            "en": [{"ext": "vtt", "url": "https://v/echt.vtt"}],
+        }
+    }
+    sprache, _, url, automatisch = youtube._waehle_spur(info, ["en"])
+    assert (sprache, url, automatisch) == ("en", "https://v/echt.vtt", False)
+
+
+def test_regionalvariante_gewinnt_gegen_autogen():
+    info = {
+        "subtitles": {
+            "en-x-autogen": [{"ext": "vtt", "url": "https://v/auto.vtt"}],
+            "en-GB": [{"ext": "vtt", "url": "https://v/gb.vtt"}],
+        }
+    }
+    assert youtube._waehle_spur(info, ["en"])[0] == "en-GB"
+
+
+def test_passende_schluessel_reihenfolge():
+    vorhanden = ["en-x-autogen", "en-GB", "en", "de"]
+    assert youtube.passende_schluessel(vorhanden, "en") == [
+        "en", "en-GB", "en-x-autogen",
+    ]
+
+
+def test_passende_schluessel_ohne_treffer():
+    assert youtube.passende_schluessel(["fr", "it"], "de") == []
+
+
+def test_spuren_auflisten_weist_autogen_als_automatisch_aus(monkeypatch):
+    # Der Bericht von `wissen inspect` soll nicht behaupten, Vimeo habe die
+    # Spur selbst erstellt.
+    monkeypatch.setattr(youtube, "_info", lambda url, referer=None: VIMEO_INFO)
+    spuren = youtube.spuren_auflisten("https://player.vimeo.com/video/1")
+    assert spuren["titel"] == "HTWCM VT0.1 - Intro"
+    assert spuren["dauer"] == 509
+    assert spuren["manuell"] == []
+    assert spuren["automatisch"] == ["en-x-autogen"]
+
+
+def test_spuren_auflisten_fasst_beide_quellen_zusammen(monkeypatch):
+    info = {
+        "title": "T", "duration": 60,
+        "subtitles": {"en": [{}], "de-x-autogen": [{}]},
+        "automatic_captions": {"fr": [{}]},
+    }
+    monkeypatch.setattr(youtube, "_info", lambda url, referer=None: info)
+    spuren = youtube.spuren_auflisten("https://x")
+    assert spuren["manuell"] == ["en"]
+    assert spuren["automatisch"] == ["de-x-autogen", "fr"]
+
+
+def test_referer_wird_als_kopfzeile_gesetzt():
+    # Domainbeschränkte Embeds antworten ohne passenden Referer nicht.
+    assert youtube._referer_opts("https://kurs.de/l") == {
+        "http_headers": {"Referer": "https://kurs.de/l"}
+    }
+    assert youtube._referer_opts(None) == {}
+
+
 def test_waehle_spur_bevorzugt_vtt_vor_json3():
     info = {
         "subtitles": {
