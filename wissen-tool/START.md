@@ -103,8 +103,31 @@ Schrägstriche (`"C:/Users/..."`) oder doppelte Backslashes
 
 ## 3. Loslegen
 
+Die virtuelle Umgebung aktivieren — der Befehl unterscheidet sich je System,
+`source` gibt es nur in Bash und Zsh, und der Ordner heißt unter Windows
+`Scripts` statt `bin`:
+
+**macOS / Linux**
+
 ```bash
-source .venv/bin/activate      # Windows: .venv\Scripts\Activate.ps1
+source .venv/bin/activate
+```
+
+**Windows, PowerShell**
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+**Windows, Eingabeaufforderung (cmd)**
+
+```cmd
+.venv\Scripts\activate.bat
+```
+
+Dann, überall gleich:
+
+```
 wissen init
 ```
 
@@ -112,27 +135,42 @@ wissen init
 falls sie fehlen, und meldet sich, wenn im angegebenen Ordner keine
 `ANLEITUNG.md` liegt — dann stimmt der Pfad aus Schritt 2 nicht.
 
-### Das `source` jedes Mal sparen
+Meldet PowerShell *„die Datei kann nicht geladen werden, da das Ausführen von
+Skripts auf diesem System deaktiviert ist"*, dann blockiert die
+Ausführungsrichtlinie das Aktivierungsskript. Zwei Wege: einmalig erlauben
+mit
 
-Einmal in `~/.zshrc` (macOS) bzw. `~/.bashrc` (Linux) eintragen:
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+oder das Aktivieren ganz überspringen und das Programm direkt aufrufen (siehe
+nächster Abschnitt) — dafür braucht es keine Richtlinienänderung.
+
+### Das Aktivieren jedes Mal sparen
+
+Das Programm liegt in der Umgebung und lässt sich direkt mit vollem Pfad
+aufrufen, ohne vorher zu aktivieren.
+
+macOS / Linux — einmal in `~/.zshrc` bzw. `~/.bashrc`:
 
 ```bash
 alias wissen="$HOME/InfProjects/wissen-tool/.venv/bin/wissen"
 ```
 
-Danach geht `wissen ...` aus jedem Ordner, ohne Aktivieren.
+Windows, PowerShell — einmal ins Profil (`notepad $PROFILE`):
 
-Unter Windows geht dasselbe über den vollen Pfad zum Programm:
+```powershell
+function wissen { & "$env:USERPROFILE\InfProjects\wissen-tool\.venv\Scripts\wissen.exe" @args }
+```
+
+Windows, cmd — direkt aufrufen:
 
 ```cmd
 %USERPROFILE%\InfProjects\wissen-tool\.venv\Scripts\wissen.exe eingang
 ```
 
-Oder in PowerShell einmalig als Funktion ins Profil (`notepad $PROFILE`):
-
-```powershell
-function wissen { & "$env:USERPROFILE\InfProjects\wissen-tool\.venv\Scripts\wissen.exe" @args }
-```
+Danach geht `wissen ...` aus jedem Ordner.
 
 ## 4. Erster Test: ein Video, das du schon kennst
 
