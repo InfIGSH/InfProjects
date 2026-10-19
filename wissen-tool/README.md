@@ -266,7 +266,7 @@ Zeitpunkt.
 .venv/bin/python -m pytest
 ```
 
-185 Tests über die netzunabhängigen Teile: Untertitel-Verarbeitung samt
+199 Tests über die netzunabhängigen Teile: Untertitel-Verarbeitung samt
 Entdoppelung, Abdeckungsrechnung, Dateikopf und Dateinamen, Ablage und
 Verschieben, `quellen.md`-Entwurf, PDF-Einlesen, Konfiguration, Spur- und
 Formatwahl, Player-Erkennung, Frame-Auswahl beim Seitentext und die

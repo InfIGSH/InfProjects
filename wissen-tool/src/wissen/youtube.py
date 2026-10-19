@@ -90,6 +90,55 @@ def abrufen(spur_url: str, referer: str | None = None) -> tuple[str, str]:
     return text, f"{len(rohdaten)} Bytes, Content-Type {typ}, Anfang: {vorschau!r}"
 
 
+def _url_rang(spur_url: str) -> int:
+    """Sortierrang nach der Form der URL.
+
+    Vimeo bietet dieselbe Spur mehrfach an: als HLS-Playlist, die die
+    Untertitel nur verweist, und als direkte Datei. Alle tragen `ext: vtt`,
+    die Formatvorliebe kann sie also nicht trennen -- die URL schon.
+    """
+    from urllib.parse import urlparse
+
+    pfad = (urlparse(spur_url).path or "").lower()
+    if pfad.endswith((".vtt", ".srt")):
+        return 0
+    if pfad.endswith((".m3u8", ".m3u")):
+        return 2
+    return 1
+
+
+def _ist_hls(text: str) -> bool:
+    return text.lstrip().startswith("#EXTM3U")
+
+
+def _hls_ziele(text: str, basis_url: str) -> list[str]:
+    """Die verwiesenen Dateien einer HLS-Playlist, absolut gemacht."""
+    from urllib.parse import urljoin
+
+    ziele = []
+    for zeile in text.splitlines():
+        zeile = zeile.strip()
+        if zeile and not zeile.startswith("#"):
+            ziele.append(urljoin(basis_url, zeile))
+    return ziele
+
+
+def _kacheln_aus(
+    text: str, format_name: str, spur_url: str, referer: str | None, tiefe: int = 0
+) -> tuple[list, str]:
+    """Kacheln aus einer Spurantwort -- folgt notfalls einer HLS-Playlist."""
+    kacheln = vtt.entdoppeln(vtt.parse(text, format_name)) if text else []
+    if kacheln or tiefe >= 1 or not text or not _ist_hls(text):
+        return kacheln, ""
+
+    for ziel in _hls_ziele(text, spur_url)[:3]:
+        weiter, diagnose = abrufen(ziel, referer)
+        unten, _ = _kacheln_aus(weiter, format_name, ziel, referer, tiefe + 1)
+        if unten:
+            return unten, f" → HLS-Playlist gefolgt: {diagnose}"
+    return [], " → HLS-Playlist verwies auf keine lesbare Spur"
+
+
 def spur_kandidaten(info: dict, sprachen: list[str]) -> list[tuple[str, str, str, bool]]:
     """Alle passenden Spuren als (sprache, format, url, automatisch), beste zuerst.
 
@@ -108,8 +157,9 @@ def spur_kandidaten(info: dict, sprachen: list[str]) -> list[tuple[str, str, str
                 nach_vorzug = sorted(
                     (e for e in eintraege if e.get("url")),
                     key=lambda e: (
+                        _url_rang(e["url"]),
                         FORMAT_VORZUG.index(e["ext"])
-                        if e.get("ext") in FORMAT_VORZUG else len(FORMAT_VORZUG)
+                        if e.get("ext") in FORMAT_VORZUG else len(FORMAT_VORZUG),
                     ),
                 )
                 for eintrag in nach_vorzug:
@@ -148,16 +198,16 @@ def spur_laden(url: str, sprachen: list[str], referer: str | None = None) -> dic
     gruende: list[str] = []
     for sprache, format_name, spur_url, automatisch in kandidaten:
         text, diagnose = abrufen(spur_url, referer)
-        kacheln = vtt.entdoppeln(vtt.parse(text, format_name)) if text else []
+        kacheln, zusatz = _kacheln_aus(text, format_name, spur_url, referer)
         if kacheln:
             return {
                 "info": info,
                 "kacheln": kacheln,
                 "sprache": sprache,
                 "automatisch": automatisch,
-                "diagnose": diagnose,
+                "diagnose": diagnose + zusatz,
             }
-        gruende.append(f"{sprache}/{format_name}: {diagnose}")
+        gruende.append(f"{sprache}/{format_name}: {diagnose}{zusatz}")
 
     raise YoutubeFehler(
         "Keine der gefundenen Untertitelspuren liess sich lesen:\n  "
@@ -191,13 +241,13 @@ def spur_probe(
             )
             with contextlib.suppress(Exception):
                 datei.write_text(text, encoding="utf-8")
-        kacheln = vtt.entdoppeln(vtt.parse(text, format_name)) if text else []
+        kacheln, zusatz = _kacheln_aus(text, format_name, spur_url, referer)
         ergebnis.append({
             "sprache": sprache,
             "format": format_name,
             "automatisch": automatisch,
             "url": spur_url,
-            "diagnose": diagnose,
+            "diagnose": diagnose + zusatz,
             "kacheln": len(kacheln),
             "datei": datei,
         })

@@ -281,6 +281,141 @@ def test_abrufen_beschreibt_eine_erfolgreiche_antwort(monkeypatch):
     assert "WEBVTT" in diagnose
 
 
+# -- Vimeos dreifach angebotene Spur -------------------------------------
+# Echter Fall: dieselbe Spur kommt als zwei HLS-Playlists und eine direkte
+# VTT-Datei. Alle drei tragen ext "vtt".
+
+HLS = (
+    "#EXTM3U\n#EXT-X-TARGETDURATION:510\n#EXT-X-ALLOW-CACHE:YES\n"
+    "#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:1\n"
+    "#EXTINF:509.680000,\n../../../texttrack/sub/180737587.vtt?pathsig=8c953e4f\n"
+    "#EXT-X-ENDLIST\n"
+)
+
+VIMEO_DREIFACH = {
+    "title": "HTWCM VT0.1 - Intro",
+    "duration": 509,
+    "subtitles": {
+        "en-x-autogen": [
+            {"ext": "vtt", "url": "https://vimeo.com/texttrack/playlist/1.m3u8"},
+            {"ext": "vtt", "url": "https://vimeo.com/texttrack/playlist/2.m3u8"},
+            {"ext": "vtt", "url": "https://vimeo.com/texttrack/sub/180737587.vtt"},
+        ]
+    },
+}
+
+
+def test_direkte_vtt_url_kommt_vor_der_hls_huelle():
+    # Sonst drei Abrufe, wo einer reicht -- bei 40-60 Lektionen je Kurs zählt das.
+    kandidaten = youtube.spur_kandidaten(VIMEO_DREIFACH, ["en"])
+    assert [k[2] for k in kandidaten] == [
+        "https://vimeo.com/texttrack/sub/180737587.vtt",
+        "https://vimeo.com/texttrack/playlist/1.m3u8",
+        "https://vimeo.com/texttrack/playlist/2.m3u8",
+    ]
+
+
+def test_spur_laden_braucht_nur_einen_abruf(monkeypatch):
+    abrufe = []
+    monkeypatch.setattr(youtube, "_info", lambda url, referer=None: VIMEO_DREIFACH)
+
+    def abrufen(u, referer=None):
+        abrufe.append(u)
+        return (VTT, "x") if u.endswith(".vtt") else (HLS, "x")
+
+    monkeypatch.setattr(youtube, "abrufen", abrufen)
+    spur = youtube.spur_laden("https://player.vimeo.com/video/1", ["en"])
+    assert len(spur["kacheln"]) == 1
+    assert len(abrufe) == 1
+
+
+@pytest.mark.parametrize(
+    "url,rang",
+    [
+        ("https://v/texttrack/sub/1.vtt", 0),
+        ("https://v/sub/1.vtt?pathsig=abc", 0),
+        ("https://v/sub/1.srt", 0),
+        ("https://www.youtube.com/api/timedtext?fmt=vtt", 1),
+        ("https://v/playlist/1.m3u8", 2),
+        ("https://v/playlist/1.m3u8?token=x", 2),
+    ],
+)
+def test_url_rang(url, rang):
+    assert youtube._url_rang(url) == rang
+
+
+# -- Der HLS-Hülle folgen ------------------------------------------------
+
+
+def test_hls_huelle_wird_erkannt():
+    assert youtube._ist_hls(HLS)
+    assert not youtube._ist_hls(VTT)
+    assert not youtube._ist_hls("")
+
+
+def test_hls_ziele_werden_absolut_gemacht():
+    # Die Verweise in der Playlist sind relativ ('../../../texttrack/...')
+    # und tragen eine Signatur im Abfrageteil, die erhalten bleiben muss.
+    ziele = youtube._hls_ziele(HLS, "https://vimeo.com/a/b/c/d/playlist.m3u8")
+    assert ziele == [
+        "https://vimeo.com/a/texttrack/sub/180737587.vtt?pathsig=8c953e4f"
+    ]
+
+
+def test_hls_ziele_ignoriert_die_kommentarzeilen():
+    # Alles mit '#' ist Metadaten, nur die nackten Zeilen sind Verweise.
+    assert len(youtube._hls_ziele(HLS, "https://v/p.m3u8")) == 1
+
+
+def test_spur_laden_folgt_der_hls_huelle_wenn_es_nichts_anderes_gibt(monkeypatch):
+    # Bietet ein Video die Spur nur als Playlist an, steht der Weg zur
+    # Untertiteldatei darin -- dem wird jetzt gefolgt.
+    info = {
+        "duration": 509,
+        "subtitles": {
+            "en-x-autogen": [
+                {"ext": "vtt", "url": "https://vimeo.com/texttrack/playlist/1.m3u8"}
+            ]
+        },
+    }
+    monkeypatch.setattr(youtube, "_info", lambda url, referer=None: info)
+    monkeypatch.setattr(
+        youtube, "abrufen",
+        lambda u, referer=None: (HLS, "277 Bytes") if u.endswith(".m3u8")
+        else (VTT, "14203 Bytes"),
+    )
+    spur = youtube.spur_laden("https://player.vimeo.com/video/1", ["en"])
+    assert [k.text for k in spur["kacheln"]] == ["Hallo Welt."]
+    assert "HLS-Playlist gefolgt" in spur["diagnose"]
+
+
+def test_hls_huelle_ohne_lesbares_ziel_wird_gemeldet(monkeypatch):
+    info = {
+        "subtitles": {
+            "en": [{"ext": "vtt", "url": "https://v/playlist/1.m3u8"}]
+        }
+    }
+    monkeypatch.setattr(youtube, "_info", lambda url, referer=None: info)
+    monkeypatch.setattr(
+        youtube, "abrufen",
+        lambda u, referer=None: (HLS, "277 Bytes") if u.endswith(".m3u8")
+        else ("", "0 Bytes"),
+    )
+    with pytest.raises(youtube.YoutubeFehler, match="HLS-Playlist verwies"):
+        youtube.spur_laden("https://x", ["en"])
+
+
+def test_hls_folge_laeuft_nicht_im_kreis(monkeypatch):
+    # Eine Playlist, die auf sich selbst verweist, darf nicht endlos laufen.
+    kreis = "#EXTM3U\n#EXTINF:1,\n1.m3u8\n"
+    monkeypatch.setattr(youtube, "abrufen", lambda u, referer=None: (kreis, "x"))
+    kacheln, zusatz = youtube._kacheln_aus(
+        kreis, "vtt", "https://v/playlist/1.m3u8", None
+    )
+    assert kacheln == []
+    assert "keine lesbare Spur" in zusatz
+
+
 def test_referer_wird_als_kopfzeile_gesetzt():
     # Domainbeschränkte Embeds antworten ohne passenden Referer nicht.
     assert youtube._referer_opts("https://kurs.de/l") == {
