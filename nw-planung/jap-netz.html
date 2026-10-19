@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JAP-Netz</title>
+<style>
+:root{
+  --bg:#f6f5f2; --panel:#ffffff; --ink:#1d1f23; --muted:#6a6f78; --line:#e2e0da; --soft:#efede8;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5;
+  --ok:#2e7d4f; --ok-soft:#e2f2e8; --plan:#2f5d8a; --plan-soft:#e3ecf5;
+  --warn:#a86a00; --warn-soft:#fbf0d9; --bad:#b3362c; --bad-soft:#f9e1de; --grey-soft:#eceae6;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 2px 8px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16181c; --panel:#1f2227; --ink:#e7e8ea; --muted:#9aa0a9; --line:#30343b; --soft:#262a30;
+    --accent:#7fb0e0; --accent-soft:#22313f;
+    --ok:#6cc495; --ok-soft:#1d3127; --plan:#7fb0e0; --plan-soft:#22313f;
+    --warn:#e0b05a; --warn-soft:#3a2f1a; --bad:#ef8a80; --bad-soft:#3d2320; --grey-soft:#2a2d33;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#16181c; --panel:#1f2227; --ink:#e7e8ea; --muted:#9aa0a9; --line:#30343b; --soft:#262a30;
+  --accent:#7fb0e0; --accent-soft:#22313f;
+  --ok:#6cc495; --ok-soft:#1d3127; --plan:#7fb0e0; --plan-soft:#22313f;
+  --warn:#e0b05a; --warn-soft:#3a2f1a; --bad:#ef8a80; --bad-soft:#3d2320; --grey-soft:#2a2d33;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+button,select,input{font:inherit;color:inherit}
+header{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header h1{font-size:16px;margin:0 8px 0 0;font-weight:650;letter-spacing:.2px}
+.ctl{display:flex;align-items:center;gap:6px;color:var(--muted)}
+select,.btn{background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:5px 9px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.on{background:var(--accent);color:var(--panel);border-color:var(--accent)}
+.meta{margin-left:auto;display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12.5px}
+.pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11.5px;background:var(--grey-soft);color:var(--muted);white-space:nowrap}
+.pill.bad{background:var(--bad-soft);color:var(--bad)} .pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.plan{background:var(--plan-soft);color:var(--plan)}
+#summary{display:none;gap:8px;flex-wrap:wrap;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+body.gaps #summary{display:flex}
+#summary .pill{cursor:pointer;font-size:12.5px;padding:3px 10px}
+main{flex:1;display:grid;grid-template-columns:repeat(4,minmax(260px,1fr));gap:12px;padding:12px 16px;min-height:0;overflow-x:auto}
+.lane{display:flex;flex-direction:column;min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
+.lane h2{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+.lane .body{overflow-y:auto;padding:8px;flex:1}
+.group{margin:4px 0 12px}
+.ghead{font-size:12px;font-weight:650;color:var(--muted);padding:4px 4px 6px;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
+.ghead:hover{color:var(--ink)}
+.node{border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin:4px 0;background:var(--panel);cursor:pointer;transition:opacity .12s,border-color .12s}
+.node:hover{border-color:var(--accent)}
+.node .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.node .sub{color:var(--muted);font-size:12px;margin-top:2px}
+.node.child{margin-left:14px}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:600;margin-right:6px}
+/* status marker: glyph + colour, so the state does not rest on colour alone */
+.st{display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;border-radius:4px;margin-right:6px;
+    vertical-align:-3px;font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:700;background:var(--grey-soft);color:var(--muted)}
+.st.gehalten{background:var(--ok-soft);color:var(--ok)} .st.geplant{background:var(--plan-soft);color:var(--plan)}
+.st.schwach{background:var(--warn-soft);color:var(--warn)} .st.offen{background:var(--bad-soft);color:var(--bad)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:4px 0 8px}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.chip{font-family:ui-monospace,Menlo,monospace;font-size:11px;padding:1px 6px;border-radius:5px;border:1px solid var(--line);background:var(--soft);cursor:pointer}
+.chip.schwach{border-style:dashed;color:var(--muted)}
+.chip.pruefen{border-color:var(--warn);color:var(--warn)}
+.chip:hover{border-color:var(--accent)}
+.node.past{border-left:3px solid var(--ok)}
+.bar{height:5px;border-radius:3px;background:var(--soft);margin-top:6px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--ok)}
+/* selection */
+body.has-sel .node,body.has-sel .ghead{opacity:.28}
+body.has-sel .node.rel,body.has-sel .node.sel,body.has-sel .ghead.rel{opacity:1}
+.node.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.node.rel{border-color:var(--accent)}
+/* gap mode */
+body.gaps .node.g-bad{background:var(--bad-soft);border-color:var(--bad)}
+body.gaps .node.g-warn{background:var(--warn-soft);border-color:var(--warn)}
+body.gaps .node.g-grey{background:var(--grey-soft);border-style:dashed}
+body.gaps .node.g-later{border-style:dashed}
+body.gaps .node.g-later .gtag{color:var(--muted);background:none}
+body.gaps.only .node:not(.g-bad):not(.g-warn):not(.g-grey):not(.keep){display:none}
+body.gaps.only .group.nogap{display:none}
+.gtag{float:right;font-size:11px;margin-left:6px}
+/* detail panel */
+#detail{position:fixed;top:0;right:0;width:min(420px,100vw);height:100%;background:var(--panel);border-left:1px solid var(--line);box-shadow:-4px 0 18px rgba(0,0,0,.12);transform:translateX(105%);transition:transform .18s;z-index:10;display:flex;flex-direction:column}
+#detail.open{transform:none}
+#detail .dh{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)}
+#detail .dh h3{margin:0;font-size:15px}
+#detail .db{overflow-y:auto;padding:12px 16px 24px}
+#detail dl{margin:0} #detail dt{font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-top:12px}
+#detail dd{margin:3px 0 0;white-space:pre-wrap}
+#detail ul{margin:4px 0 0;padding-left:18px}
+#detail a{color:var(--accent)}
+.x{background:none;border:none;font-size:20px;line-height:1;cursor:pointer;color:var(--muted)}
+#notes{display:none;padding:10px 16px;background:var(--warn-soft);border-bottom:1px solid var(--line);font-size:13px}
+#notes.open{display:block} #notes ul{margin:4px 0;padding-left:18px}
+.empty{color:var(--muted);padding:12px;font-size:13px}
+#drop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);color:#fff;font-size:20px;z-index:20}
+@media (max-width:900px){main{grid-template-columns:repeat(4,85vw);scroll-snap-type:x mandatory}.lane{scroll-snap-align:start}}
+</style>
+</head>
+<body>
+<header>
+  <h1>JAP-Netz</h1>
+  <label class="ctl">Fach <select id="fFach"></select></label>
+  <label class="ctl">Jahrgang <select id="fJg"></select></label>
+  <button class="btn" id="bGaps" title="Lücken markieren">Lücken-Modus</button>
+  <button class="btn" id="bOnly" title="Nur Lücken zeigen" style="display:none">nur Lücken</button>
+  <div class="meta">
+    <span id="mStand"></span>
+    <button class="btn" id="bNotes"></button>
+    <button class="btn" id="bLoad" title="Neuere jap-data.json laden">Daten laden…</button>
+    <input type="file" id="file" accept=".json,application/json" hidden>
+  </div>
+</header>
+<div id="notes"></div>
+<div id="summary"></div>
+<main>
+  <section class="lane"><h2><span>Kerncurriculum</span><span id="c1"></span></h2><div class="body" id="L1"></div></section>
+  <section class="lane"><h2><span>Jahresarbeitsplan</span><span id="c2"></span></h2><div class="body" id="L2"></div></section>
+  <section class="lane"><h2><span>Einzelstunden</span><span id="c3"></span></h2><div class="body" id="L3"></div></section>
+  <section class="lane"><h2><span>Material</span><span id="c4"></span></h2><div class="body" id="L4"></div></section>
+</main>
+<aside id="detail" aria-live="polite"><div class="dh"><h3 id="dTitle"></h3><button class="x" id="dClose" aria-label="Schließen">×</button></div><div class="db" id="dBody"></div></aside>
+<div id="drop">jap-data.json hier ablegen</div>
+
+<script>
+"use strict";
+// Embedded snapshot (injected by build_html.py). Replaced at runtime by "Daten laden…".
+const EMBED = null;   // replaced by build_html.py with the snapshot; null = load a file at runtime
+const SCHEMA = 1;
+const HORIZON_DAYS = 21;   // lessons within this many days from today need material
+const STALE_DAYS = 14;     // a snapshot older than this is flagged in the header
+const ALIAS_OK = 0.8;      // Kürzel matches below this are shown as "prüfen", not as fact
+// Edge types the loader knowingly ignores: kc_jap is redundant with the jap node's own kc[] field.
+const EDGES_IGNORED = {kc_jap: "redundant zu jap.kc"};
+
+// Today in UTC, to match the date strings in the snapshot (no timezone day shift).
+const TODAY = new Date().toISOString().slice(0, 10);
+function addDays(iso, n){ const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); }
+function daysBetween(a, b){ return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000); }
+
+let D = null;            // current dataset
+const S = {fach: null, jg: null, gaps: false, only: false, sel: null};
+const IX = {};           // indexes, rebuilt on load
+
+// ---------- helpers
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const push = (m, k, v) => { (m[k] = m[k] || []).push(v); };
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem("japnetz." + k)); } catch { return null; } },
+  set(k, v){ try { localStorage.setItem("japnetz." + k, JSON.stringify(v)); } catch {} }
+};
+
+// first date (dd.mm.) in a free-text Zeitraum -> sortable key within the school year (Aug..Jul)
+function dateKey(text){
+  const m = /(\d{1,2})\.(\d{1,2})\./.exec(text || "");
+  if (!m) return 9999;
+  const mon = +m[2], day = +m[1];
+  return (mon >= 8 ? mon - 8 : mon + 4) * 40 + day;
+}
+
+// ---------- load + index
+function load(data, origin){
+  if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.edges) || !data.meta)
+    throw new Error("Keine gültige jap-data.json (nodes/edges/meta fehlen).");
+  if (data.meta.schema_version !== SCHEMA)
+    throw new Error(`Schema-Version ${data.meta.schema_version} passt nicht zu diesem Tool (erwartet ${SCHEMA}).`);
+  D = data;
+  // Time is evaluated against TODAY, not against the snapshot date: a stored "vergangen" flag
+  // would silently go stale the moment the first lesson in the file is held.
+  S._horizon = addDays(TODAY, HORIZON_DAYS);
+  S._age = data.meta.stichtag ? daysBetween(data.meta.stichtag, TODAY) : null;
+  for (const k of Object.keys(IX)) delete IX[k];
+  const N = IX.N = {};
+  for (const n of D.nodes) N[n.id] = n;
+  // lessons: recompute "past" from the dates in the snapshot (dates are sorted, last one counts)
+  for (const n of D.nodes)
+    if (n.type === "ds") n.past = n.datum && n.datum.length ? n.datum[n.datum.length - 1] < TODAY : !!n.vergangen;
+  Object.assign(IX, {kompsByKc:{}, dsByHost:{}, dsByBst:{}, dsKomps:{}, kompDs:{}, matByJap:{}, japByMat:{},
+                     seqByMat:{}, seqJap:{}, children:{}, aliases:{}, aliasT:{}, skipped:{}});
+  for (const e of D.edges){
+    if (!N[e.from] || !N[e.to]) continue;               // tolerate dangling edges
+    switch (e.type){
+      case "komp_kc": push(IX.kompsByKc, e.to, e.from); break;
+      case "ds_host": push(IX.dsByHost, e.to, e.from); break;
+      case "ds_baustein": push(IX.dsByBst, e.to, e.from); break;
+      case "ds_komp": push(IX.dsKomps, e.from, e); push(IX.kompDs, e.to, e); break;
+      case "mat_jap": push(IX.matByJap, e.to, e.from); push(IX.japByMat, e.from, e); break;
+      case "mat_seq": push(IX.seqByMat, e.from, e.to); break;
+      case "seq_jap": push(IX.seqJap, e.to, e.from); break;
+      case "jap_parent": push(IX.children, e.to, e.from); break;
+      default: IX.skipped[e.type] = (IX.skipped[e.type] || 0) + 1;   // surfaced in the notes panel
+    }
+  }
+  for (const m of D.kuerzel_map || []){
+    push(IX.aliases, m.komp, {jap: "jap:" + m.jap, lokal: m.lokal, status: m.status, treffer: m.treffer});
+    IX.aliasT[m.komp + "|jap:" + m.jap + "|" + m.lokal] = m.treffer;   // to judge a lesson's Kürzel below
+  }
+  // lessons belong to their Baustein; lessons hosted on a Baustein page are their own
+  for (const n of D.nodes) if (n.type === "ds" && n.baustein === n.host) push(IX.dsByBst, n.host, n.id);
+  initFilters();
+  renderMeta(origin);
+  render();
+}
+
+function kompState(k){
+  // gehalten (green) / geplant (blue) / schwach (amber) / offen (red)
+  const a = k.abdeckung || [];
+  const voll = a.filter(x => x.staerke === "voll");
+  if (voll.some(x => x.quelle === "stand" || (x.ds && IX.N[x.ds] && IX.N[x.ds].past))) return "gehalten";
+  if (voll.length) return "geplant";
+  if (a.length) return "schwach";
+  return "offen";
+}
+const STATE_TXT = {gehalten:"gehalten", geplant:"geplant", schwach:"nur Vorbereitung/Bezug", offen:"offen"};
+const STATE_MK = {gehalten:"✓", geplant:"›", schwach:"~", offen:"!"};
+// Marker for one competence. 'touched' = the KC is only brushed in this grade (it is planned in
+// another one), so its state is none of this grade's business -> neutral, never a red dot.
+function stMark(st, touched){
+  const txt = touched ? "in diesem Jahrgang nicht verplant" : STATE_TXT[st];
+  return `<span class="st${touched ? "" : " " + st}" role="img" aria-label="${esc(txt)}" title="${esc(txt)}">${touched ? "·" : STATE_MK[st]}</span>`;
+}
+
+// How well the Kürzel on a JAP page resolved to this competence. The build stores every match as
+// "auto"; anything below ALIAS_OK is a guess and is marked as such instead of being shown as fact.
+function aliasTreffer(ds, edge){
+  if (!edge.lokal) return null;
+  const t = IX.aliasT[edge.to + "|" + ds.host + "|" + edge.lokal];
+  return t == null ? null : t;
+}
+
+// ---------- filters
+function initFilters(){
+  const japs = D.nodes.filter(n => n.type === "jap" && n.fach && n.jahrgang != null);
+  const faecher = [...new Set(japs.map(n => n.fach))].sort();
+  const want = store.get("fach");
+  S.fach = faecher.includes(S.fach) ? S.fach : (faecher.includes(want) ? want : (faecher.includes("NW") ? "NW" : faecher[0]));
+  $("fFach").innerHTML = faecher.map(f => `<option${f === S.fach ? " selected" : ""}>${esc(f)}</option>`).join("");
+  fillJg();
+}
+function fillJg(){
+  const jgs = [...new Set(D.nodes.filter(n => n.type === "jap" && n.fach === S.fach && n.jahrgang != null).map(n => n.jahrgang))].sort((a,b) => a-b);
+  const want = store.get("jg");
+  S.jg = jgs.includes(S.jg) ? S.jg : (jgs.includes(want) ? want : jgs[0]);
+  $("fJg").innerHTML = jgs.map(j => `<option value="${j}"${j === S.jg ? " selected" : ""}>${j}</option>`).join("");
+}
+
+// ---------- scope for current filter
+function scope(){
+  const N = IX.N;
+  const japs = D.nodes.filter(n => n.type === "jap" && n.fach === S.fach && n.jahrgang === S.jg);
+  const japSet = new Set(japs.map(n => n.id));
+  const tops = japs.filter(n => !n.parents.some(p => japSet.has(p)))
+                   .sort((a,b) => (a.halbjahr ?? 9) - (b.halbjahr ?? 9) || (a.reihenfolge ?? 99) - (b.reihenfolge ?? 99) || dateKey(a.zeitraum) - dateKey(b.zeitraum));
+  const kids = p => (IX.children[p.id] || []).map(id => N[id]).filter(n => japSet.has(n.id) && n.parents.find(x => japSet.has(x)) === p.id)
+                   .sort((a,b) => dateKey(a.zeitraum) - dateKey(b.zeitraum) || a.label.localeCompare(b.label));
+  const japOrder = [];
+  for (const t of tops){ japOrder.push(t); for (const c of kids(t)) japOrder.push(c); }
+  const kcIds = []; for (const j of japOrder) for (const k of j.kc) if (!kcIds.includes(k)) kcIds.push(k);
+  const kcs = kcIds.map(id => N[id]).sort((a,b) => (a.reihenfolge ?? 99) - (b.reihenfolge ?? 99));
+  const ds = []; for (const j of japOrder) for (const id of IX.dsByHost[j.id] || []) ds.push(N[id]);
+  const mats = new Set(); for (const j of japOrder) for (const id of IX.matByJap[j.id] || []) mats.add(id);
+  const unassigned = D.nodes.filter(n => n.type === "material" && n.fach === S.fach && n.jahrgang === S.jg && !IX.japByMat[n.id]);
+  return {japs: japOrder, japSet, tops, kids, kcs, ds, mats, unassigned};
+}
+
+// ---------- gap evaluation (facts from the snapshot, judgement here)
+function gapOf(n, sc){
+  if (n.type === "kompetenz"){
+    const kc = IX.N[n.kc];
+    if (kc.leer || !(n.verplant_in || []).includes(S.jg)) return null;   // KC only touched in this grade -> no gap
+    const st = kompState(n);
+    if (st === "offen") return ["bad", "keine Stunde"];
+    if (st === "schwach") return ["warn", "nur vorbereitend"];
+    return null;
+  }
+  if (n.type === "jap"){
+    if (!n.kc.length) return ["grey", "ohne KC"];
+    if (n.ebene === "klassenarbeit") return null;
+    const hasKids = (IX.children[n.id] || []).some(id => sc.japSet.has(id) && IX.N[id].ebene !== "klassenarbeit");
+    if (hasKids) return null;                                            // judged on its children
+    if (n.material.voll > 0) return null;
+    return n.material.roh > 0 ? ["warn", "nur Rohmaterial"] : ["bad", "kein Material"];
+  }
+  if (n.type === "ds"){
+    if (n.art !== "inhalt") return null;
+    if (!n.baustein) return ["grey", "ohne Baustein"];
+    const b = IX.N[n.baustein];
+    if (b.material.voll === 0){
+      // lessons further out than HORIZON_DAYS are expected to be unprepared -> grey, not yellow
+      const later = n.datum.length && n.datum[0] > S._horizon;
+      if (later) return ["later", "Material später"];
+      return ["warn", b.material.roh ? "nur Rohmaterial" : "kein Material"];
+    }
+    return null;
+  }
+  if (n.type === "material" && !IX.japByMat[n.id]) return ["grey", "nicht zugeordnet"];
+  return null;
+}
+
+// 'later' = expected, not actionable now -> not a gap for counts / "nur Lücken"
+const isGap = id => S._gaps[id] && S._gaps[id][0] !== "later";
+
+// ---------- rendering
+function nodeHtml(n, inner, extra = ""){
+  const g = S._gaps[n.id];
+  const cls = g ? ` g-${g[0]}` : "";
+  const tag = g ? `<span class="gtag pill ${["grey","later"].includes(g[0]) ? "" : g[0]}">${esc(g[1])}</span>` : "";
+  return `<div class="node${cls}${extra}" data-id="${esc(n.id)}" tabindex="0">${tag}${inner}</div>`;
+}
+
+function render(){
+  const sc = S._sc = scope();
+  const N = IX.N;
+  S._gaps = {};
+  const all = [...sc.japs, ...sc.ds, ...[...sc.mats].map(id => N[id]), ...sc.unassigned];
+  for (const kc of sc.kcs) for (const k of IX.kompsByKc[kc.id] || []) all.push(N[k]);
+  for (const n of all){ const g = gapOf(n, sc); if (g) S._gaps[n.id] = g; }
+  // Kürzel that resolved only loosely: a fact in the snapshot, a question for the teacher
+  S._weak = 0;
+  for (const d of sc.ds) for (const e of IX.dsKomps[d.id] || []){ const t = aliasTreffer(d, e); if (t != null && t < ALIAS_OK) S._weak++; }
+
+  // lane 1: KC competences
+  let h = "", c1 = 0;
+  for (const kc of sc.kcs){
+    const komps = (IX.kompsByKc[kc.id] || []).map(id => N[id]).sort((a,b) => (a.art > b.art) - (a.art < b.art) || a.nr - b.nr);
+    const touched = !(kc.verplant_in || []).includes(S.jg);
+    const anyGap = komps.some(k => isGap(k.id));
+    h += `<div class="group${anyGap ? "" : " nogap"}"><div class="ghead" data-id="${esc(kc.id)}">${esc(kc.label)}
+          ${kc.leer ? '<span class="pill">leer</span>' : ""}${kc.status === "Entwurf" ? '<span class="pill warn">Entwurf</span>' : ""}
+          ${touched ? `<span class="pill">angeschnitten · verplant in Jg. ${esc((kc.verplant_in || []).join(", ") || "–")}</span>` : ""}</div>`;
+    if (!komps.length) h += `<div class="empty">Kompetenzen nicht als Liste erfasst (${esc(kc.kc_format)}).</div>`;
+    for (const k of komps){
+      c1++;
+      h += nodeHtml(k, `<div class="t">${stMark(kompState(k), touched)}<span class="code">${esc(k.code)}</span>${esc(k.text || (k.niveaus || []).join(", "))}</div>`);
+    }
+    h += "</div>";
+  }
+  $("L1").innerHTML = h || `<div class="empty">Kein KC-Bezug für diese Auswahl.</div>`;
+  $("c1").textContent = c1;
+
+  // lane 2: JAP
+  h = "";
+  for (const t of sc.tops){
+    h += japCard(t, false);
+    for (const c of sc.kids(t)) h += japCard(c, true);
+  }
+  $("L2").innerHTML = h || `<div class="empty">Keine JAP-Einträge.</div>`;
+  $("c2").textContent = sc.japs.length;
+
+  // lane 3: lessons grouped by Baustein (fallback: host page)
+  h = "";
+  const groups = []; const gmap = {};
+  for (const d of sc.ds){
+    const key = d.baustein || d.host;
+    if (!gmap[key]){ gmap[key] = []; groups.push(key); }
+    gmap[key].push(d);
+  }
+  for (const key of groups){
+    const list = gmap[key].sort((a,b) => (a.datum[0] || "9") < (b.datum[0] || "9") ? -1 : 1);
+    const anyGap = list.some(d => isGap(d.id));
+    h += `<div class="group${anyGap ? "" : " nogap"}"><div class="ghead" data-id="${esc(key)}">${esc(N[key].label)}</div>`;
+    for (const d of list){
+      const refs = (IX.dsKomps[d.id] || []);
+      const chips = refs.map(e => {
+        const t = aliasTreffer(d, e);
+        const weak = t != null && t < ALIAS_OK;
+        const tip = N[e.to].label + ": " + N[e.to].text + (weak ? `\n\nKürzel „${e.lokal}“ nur unscharf zugeordnet (Treffer ${t}) – bitte prüfen.` : "");
+        return `<span class="chip${e.staerke === "schwach" ? " schwach" : ""}${weak ? " pruefen" : ""}" data-id="${esc(e.to)}" title="${esc(tip)}">${esc(e.lokal || N[e.to].code)}${weak ? " ?" : ""}${e.zusatz && e.zusatz !== "alle" ? " · " + esc(e.zusatz) : ""}</span>`;
+      }).join("");
+      const inf = d.baustein_quelle === "datum_mehrdeutig" ? ' <span class="pill warn" title="Datum steht in mehreren Bausteinen">Zuordnung unsicher</span>' : "";
+      h += nodeHtml(d, `<div class="t"><b>${esc(d.datum_text)}</b> ${esc(d.inhalt)}</div>${inf}${chips ? `<div class="chips">${chips}</div>` : `<div class="sub">${esc(d.art === "leistung" ? "Leistungsüberprüfung" : "ohne Kompetenzbezug")}</div>`}`,
+        d.past ? " past" : "");
+    }
+    h += "</div>";
+  }
+  $("L3").innerHTML = h || `<div class="empty">Keine Einzelstunden-Tabellen auf den JAP-Seiten dieser Auswahl.</div>`;
+  $("c3").textContent = sc.ds.length;
+
+  // lane 4: material grouped by JAP target
+  h = ""; let c4 = 0;
+  for (const j of sc.japs){
+    const ms = (IX.matByJap[j.id] || []).map(id => N[id]);
+    if (!ms.length) continue;
+    const anyGap = ms.some(m => isGap(m.id));
+    h += `<div class="group${anyGap ? "" : " nogap"}"><div class="ghead" data-id="${esc(j.id)}">${esc(j.label)}</div>`;
+    for (const m of ms){ c4++; h += matCard(m); }
+    h += "</div>";
+  }
+  if (sc.unassigned.length){
+    h += `<div class="group"><div class="ghead">Nicht zugeordnet</div>`;
+    for (const m of sc.unassigned){ c4++; h += matCard(m); }
+    h += "</div>";
+  }
+  $("L4").innerHTML = h || `<div class="empty">Kein Material zugeordnet.</div>`;
+  $("c4").textContent = c4;
+
+  renderSummary();
+  applySelection();
+}
+
+function japCard(j, child){
+  const prog = j.std_geplant ? Math.min(100, Math.round(100 * (j.std_gehalten || 0) / j.std_geplant)) : null;
+  const m = j.ebene === "tf" && (IX.children[j.id] || []).length ? j.material_inkl_kinder : j.material;
+  const sub = [j.status, j.std_geplant != null ? `${j.std_gehalten || 0}/${j.std_geplant} Std.` : null,
+               `Material ${m.voll}${m.roh ? " + " + m.roh + " roh" : ""}`].filter(Boolean).join(" · ");
+  const badge = j.ebene === "klassenarbeit" ? '<span class="pill">KA</span> ' : j.ebene === "einschub" ? '<span class="pill">Einschub</span> ' : "";
+  return nodeHtml(j, `<div class="t">${badge}${child ? "" : "<b>"}${esc(j.label)}${child ? "" : "</b>"}</div><div class="sub">${esc(sub)}</div>${prog != null ? `<div class="bar"><i style="width:${prog}%"></i></div>` : ""}`, child ? " child" : "");
+}
+function matCard(m){
+  const ann = (IX.japByMat[m.id] || []).some(e => e.quelle === "annahme") ? ' <span class="pill" title="Zuordnung ist eine Prototyp-Annahme, keine Notion-Relation">Annahme</span>' : "";
+  return nodeHtml(m, `<div class="t">${esc(m.label)}</div><div class="sub">${esc(m.typ || "–")}${m.roh ? ' · <span class="pill warn">Rohmaterial</span>' : ""}${ann}</div>`);
+}
+
+function renderSummary(){
+  const c = {bad:0, warn:0, grey:0, later:0}; const byType = {};
+  for (const [id, g] of Object.entries(S._gaps)){ c[g[0]]++; if (g[0] === "later") continue; const t = IX.N[id].type; byType[t] = (byType[t] || 0) + 1; }
+  const T = {kompetenz:"Kompetenzen", jap:"JAP-Einträge", ds:"Stunden", material:"Material"};
+  $("summary").innerHTML = `<span class="pill bad">${c.bad} rot</span><span class="pill warn">${c.warn} gelb</span><span class="pill">${c.grey} zu prüfen</span>` +
+    (c.later ? `<span class="pill" title="Stunden später als ${HORIZON_DAYS} Tage ab heute ohne Material – erwartbar">${c.later} Stunden: Material später</span>` : "") +
+    (S._weak ? `<span class="pill warn" data-jump="pruefen" title="Kürzel mit Treffer unter ${ALIAS_OK} – Zuordnung Stunde→Kompetenz bitte prüfen">${S._weak} Kürzel prüfen</span>` : "") +
+    Object.entries(byType).map(([t, n]) => `<span class="pill" data-jump="${t}">${n} ${T[t] || t}</span>`).join("");
+}
+
+function renderMeta(origin){
+  const m = D.meta;
+  // The snapshot is a photograph; dates move on without it. Say how old it is.
+  const age = S._age;
+  const stale = age != null && age > STALE_DAYS
+    ? ` <span class="pill warn" title="Stunden, Material und Stand können sich seit dem Stichtag geändert haben – neu bauen und über „Daten laden…“ öffnen">${age} Tage alt</span>`
+    : (age != null && age > 0 ? ` <span class="pill">vor ${age} Tg.</span>` : "");
+  $("mStand").innerHTML = `Stand ${esc(m.stichtag)}${stale}${m.complete ? "" : ' <span class="pill bad" title="Snapshot unvollständig">unvollständig</span>'}${origin ? " · " + esc(origin) : ""}`;
+
+  const w = m.warnings || [], a = m.annahmen || [];
+  // Things this view knowingly leaves out, so they are visible instead of silently dropped.
+  const own = [];
+  const sol = D.nodes.filter(n => n.type === "sol");
+  if (sol.length) own.push(`${sol.length} SOL-Kompetenzen im Datensatz, hier nicht verortet – <a href="#" id="solLink">anzeigen</a>`);
+  for (const [t, n] of Object.entries(IX.skipped || {}))
+    own.push(`${n} Kanten vom Typ <code>${esc(t)}</code> nicht ausgewertet${EDGES_IGNORED[t] ? ` (${esc(EDGES_IGNORED[t])})` : " – unbekannter Typ"}`);
+  if (age != null && age > STALE_DAYS) own.push(`Snapshot ist ${age} Tage alt – „vergangen“ und der ${HORIZON_DAYS}-Tage-Horizont werden live gerechnet, Material- und Stundenstände nicht.`);
+
+  $("bNotes").textContent = `${w.length + own.length} Hinweise`;
+  $("notes").innerHTML =
+    `<b>Zeichen in Spalte 1</b><div class="legend">` +
+      ["gehalten","geplant","schwach","offen"].map(s => `<span>${stMark(s, false)}${esc(STATE_TXT[s])}</span>`).join("") +
+      `<span>${stMark(null, true)}in diesem Jahrgang nicht verplant</span></div>` +
+    `<b>Annahmen</b><ul>${a.map(x => `<li>${esc(x)}</li>`).join("") || "<li>keine</li>"}</ul>` +
+    `<b>Hinweise aus dem Build</b><ul>${w.map(x => `<li>${esc(x)}</li>`).join("") || "<li>keine</li>"}</ul>` +
+    (own.length ? `<b>Nicht dargestellt</b><ul>${own.map(x => `<li>${x}</li>`).join("")}</ul>` : "");
+}
+
+// SOL competences have no edge to any JAP entry in the snapshot, so they get no lane. Showing them
+// on demand keeps them usable without inventing a link the data does not contain.
+function showSol(){
+  const sol = D.nodes.filter(n => n.type === "sol");
+  const by = {};
+  for (const s of sol) (by[s.kategorie || "–"] = by[s.kategorie || "–"] || []).push(s);
+  $("dTitle").textContent = `SOL-Kompetenzen (${sol.length})`;
+  $("dBody").innerHTML = `<p class="pill">ohne Bezug zu einem JAP-Eintrag im Datensatz</p><dl>` +
+    Object.entries(by).map(([k, list]) => `<dt>${esc(k)}</dt><dd>${list.map(s =>
+      `<b>${esc(s.label)}</b><br>${esc(s.verhalten || "")}` +
+      (s.instrumente ? `<br><i>Instrumente:</i> ${esc(s.instrumente)}` : "") +
+      (s.unterstuetzung ? `<br><i>Unterstützung:</i> ${esc(s.unterstuetzung)}` : "") +
+      (s.url ? `<br>${notion(s.url)}` : "")).join("<br><br>")}</dd>`).join("") + `</dl>`;
+  $("detail").classList.add("open");
+}
+
+// ---------- path highlight: what belongs to the selected node across all lanes
+function related(id){
+  const N = IX.N, R = new Set([id]);
+  const n = N[id]; if (!n) return R;
+  const addJapUp = j => { R.add(j); for (const p of N[j].parents) R.add(p); };
+  const matsOf = j => { for (const m of IX.matByJap[j] || []) R.add(m); };
+  const dsOfJap = j => [...(IX.dsByHost[j] || []), ...(IX.dsByBst[j] || [])];
+  const kompsOfDs = d => { for (const e of IX.dsKomps[d] || []) R.add(e.to); };
+  if (n.type === "kc"){
+    for (const k of IX.kompsByKc[id] || []) R.add(k);
+    for (const j of D.nodes.filter(x => x.type === "jap" && x.kc.includes(id))) { R.add(j.id); matsOf(j.id); for (const d of dsOfJap(j.id)) R.add(d); }
+  } else if (n.type === "kompetenz"){
+    R.add(n.kc);
+    for (const e of IX.kompDs[id] || []){
+      const d = N[e.from]; R.add(d.id); addJapUp(d.host);
+      if (d.baustein){ addJapUp(d.baustein); matsOf(d.baustein); }
+    }
+    for (const a of n.abdeckung || []) if (a.quelle === "stand") addJapUp(a.jap);
+  } else if (n.type === "jap"){
+    addJapUp(id); for (const k of n.kc) R.add(k);
+    const fam = [id, ...(IX.children[id] || [])];
+    let hasDs = false;
+    for (const j of fam){ R.add(j); matsOf(j); for (const d of dsOfJap(j)){ hasDs = true; R.add(d); kompsOfDs(d); } }
+    if (!hasDs) for (const k of n.kc) for (const c of IX.kompsByKc[k] || []) R.add(c);   // no lesson table -> whole KC
+  } else if (n.type === "ds"){
+    kompsOfDs(id); addJapUp(n.host); for (const k of N[n.host].kc) R.add(k);
+    if (n.baustein){ addJapUp(n.baustein); matsOf(n.baustein); }
+  } else if (n.type === "material"){
+    for (const e of IX.japByMat[id] || []){
+      addJapUp(e.to); for (const k of N[e.to].kc) R.add(k);
+      for (const d of dsOfJap(e.to)){ R.add(d); kompsOfDs(d); }
+    }
+  }
+  return R;
+}
+
+function applySelection(){
+  const R = S.sel ? related(S.sel) : null;
+  document.body.classList.toggle("has-sel", !!R);
+  for (const el of document.querySelectorAll(".node,.ghead[data-id]")){
+    const id = el.dataset.id;
+    el.classList.toggle("sel", !!R && id === S.sel && el.classList.contains("node"));
+    el.classList.toggle("rel", !!R && R.has(id));
+    el.classList.toggle("keep", !!R && R.has(id));
+  }
+  if (R) for (const lane of ["L1","L2","L3","L4"]){
+    const first = $(lane).querySelector(".node.rel, .node.sel");
+    if (first && !isVisible(first, $(lane))) first.scrollIntoView({block:"center", behavior:"smooth"});
+  }
+}
+function isVisible(el, box){ const a = el.getBoundingClientRect(), b = box.getBoundingClientRect(); return a.top >= b.top && a.bottom <= b.bottom; }
+
+// ---------- detail panel
+function field(label, val){ return val == null || val === "" || (Array.isArray(val) && !val.length) ? "" : `<dt>${esc(label)}</dt><dd>${val}</dd>`; }
+function list(arr){ return `<ul>${arr.map(x => `<li>${x}</li>`).join("")}</ul>`; }
+function link(id, text){ return `<a href="#" data-goto="${esc(id)}">${esc(text)}</a>`; }
+function notion(url){ return url ? `<a href="${esc(url)}" target="_blank" rel="noopener">in Notion öffnen</a>` : ""; }
+
+function showDetail(id){
+  const N = IX.N, n = N[id]; if (!n) return;
+  let t = n.label, b = "";
+  if (n.type === "kc"){
+    b = field("Status", esc(n.status)) + field("Jahrgangsband", esc((n.band || []).join("/"))) +
+        field("Verplant in Jg.", esc((n.verplant_in || []).join(", ") || "–")) +
+        field("Pflicht-Vorläufer", esc(n.details.vorlaeufer)) + field("Typische Fehlvorstellungen", esc(n.details.fehlvorstellungen)) +
+        field("AFB I – Beispiele", esc(n.details.afb[0])) + field("AFB II – Beispiele", esc(n.details.afb[1])) + field("AFB III – Beispiele", esc(n.details.afb[2])) +
+        field("Hinweise", esc(n.details.hinweise)) + field("Quelle", notion(n.url));
+  } else if (n.type === "kompetenz"){
+    const kc = N[n.kc]; const st = kompState(n);
+    const touched = !(kc.verplant_in || []).includes(S.jg);
+    t = `${n.code} · ${kc.tf_label || kc.label}`;
+    const cov = (IX.kompDs[id] || []).map(e => {
+      const d = N[e.from], tr = aliasTreffer(d, e);
+      return `${link(d.id, d.datum_text + " – " + d.inhalt.slice(0, 60))}${e.staerke === "schwach" ? " <i>(" + esc(e.zusatz) + ")</i>" : ""}${d.past ? " ✔" : ""}` +
+             (tr != null && tr < ALIAS_OK ? ` <span class="pill warn" title="Kürzel „${esc(e.lokal)}“ nur unscharf zugeordnet">Kürzel prüfen · ${tr}</span>` : "");
+    });
+    const stand = (n.abdeckung || []).filter(a => a.quelle === "stand").map(a => `laut Kompetenztabelle erledigt (${link(a.jap, N[a.jap].label)})`);
+    const al = (IX.aliases[id] || []).map(a => `${esc(a.lokal)} auf ${link(a.jap, N[a.jap].label)} ` +
+      (a.treffer < ALIAS_OK ? `<span class="pill warn" title="Treffer unter ${ALIAS_OK} – vom Build automatisch gesetzt, nicht geprüft">prüfen · ${a.treffer}</span>`
+                            : `<span class="pill">${esc(a.status)} · ${a.treffer}</span>`));
+    b = `<dd>${esc(n.text)}</dd>` +
+        field("Stand", `${stMark(st, touched)}${touched ? `${esc(STATE_TXT[st])} – aber in Jg. ${esc((kc.verplant_in || []).join(", ") || "–")} verplant, hier nur angeschnitten` : esc(STATE_TXT[st])}`) +
+        field("Bereich", esc(n.bereich)) +
+        field("Kerncurriculum", link(kc.id, kc.label)) + field("Stunden", cov.length ? list(cov) : "keine") + field("Weitere Abdeckung", stand.length ? list(stand) : "") +
+        field("Kürzel auf JAP-Seiten", al.length ? list(al) : "");
+  } else if (n.type === "jap"){
+    const fam = n.ebene === "tf" && (IX.children[id] || []).length ? n.material_inkl_kinder : n.material;
+    const seqs = (IX.seqJap[id] || []).map(s => esc(N[s].label));
+    b = field("Ebene", esc(n.ebene)) + field("Status", esc(n.status)) +
+        field("Stunden", n.std_geplant != null ? `${n.std_gehalten || 0} von ${n.std_geplant} gehalten · ${n.verbleibend} verbleibend <i>(berechnet)</i>` : (n.std_gehalten ? `${n.std_gehalten} gehalten` : "")) +
+        field("Zeitraum", esc(n.zeitraum)) +
+        field("Übergeordnet", n.parents.map(p => link(p, N[p].label)).join("<br>")) +
+        field("Kerncurriculum", n.kc.map(k => link(k, N[k].label)).join("<br>") || "<i>kein KC-Bezug</i>") +
+        field("Material", `${fam.voll} fertig, ${fam.roh} Rohmaterial`) +
+        field("Sequenzen (aus Material abgeleitet)", seqs.length ? list(seqs) : "") +
+        field("Begründung", n.page && n.page.begruendung && n.page.begruendung.length ? list(n.page.begruendung.map(esc)) : "") +
+        field("Fach", esc(n.fach) + (n.fach_flag ? ` <span class="pill warn">${esc(n.fach_flag)}</span>` : "")) + field("Quelle", notion(n.url));
+  } else if (n.type === "ds"){
+    t = `${n.datum_text} · ${N[n.host].label}`;
+    const refs = (IX.dsKomps[id] || []).map(e => {
+      const tr = aliasTreffer(n, e);
+      return `${link(e.to, N[e.to].code)} ${esc(N[e.to].text.slice(0, 80))}${e.zusatz ? ` <i>(${esc(e.zusatz)})</i>` : ""}${e.aufloesung === "nachbarseite" ? ' <span class="pill">Kürzel von Nachbarseite</span>' : ""}` +
+             (tr != null && tr < ALIAS_OK ? ` <span class="pill warn" title="Kürzel „${esc(e.lokal)}“ unscharf zugeordnet – Zuordnung Stunde→Kompetenz bitte prüfen">Kürzel prüfen · ${tr}</span>` : "");
+    });
+    const bq = {host:"Tabelle steht auf der Baustein-Seite", datum:"über das Datum im Zeitraum", datum_mehrdeutig:"über das Datum – mehrdeutig, bitte prüfen"}[n.baustein_quelle];
+    b = `<dd>${esc(n.inhalt)}</dd>` + field("Termin", esc(n.datum_text) + (n.past ? " · vergangen" : " · geplant")) +
+        field("Kompetenzen", refs.length ? list(refs) : esc(n.kompetenzen_raw || "–")) +
+        field("Baustein", n.baustein ? `${link(n.baustein, N[n.baustein].label)}<br><i>${esc(bq || "")}</i>` : "<i>nicht zuordenbar</i>") +
+        field("Steht auf", link(n.host, N[n.host].label));
+  } else if (n.type === "material"){
+    const j = (IX.japByMat[id] || []).map(e => `${link(e.to, N[e.to].label)}${e.quelle === "annahme" ? ' <span class="pill">Annahme</span>' : e.quelle === "relation_fehlgeleitet" ? ' <span class="pill warn">aus Feld „Sequenz“</span>' : ""}`);
+    b = field("Typ", esc(n.typ)) + field("Status", esc(n.status)) + field("Datei", esc(n.datei)) +
+        field("JAP-Bezug", j.length ? j.join("<br>") : "<i>nicht zugeordnet</i>") +
+        field("Sequenz", (IX.seqByMat[id] || []).map(s => esc(N[s].label)).join("<br>")) +
+        field("Erfasst", esc(n.erfasst)) +
+        field("Quelle", [n.quelle_url ? `<a href="${esc(n.quelle_url)}" target="_blank" rel="noopener">Fundstelle</a>` : "", notion(n.url)].filter(Boolean).join(" · "));
+  }
+  const g = S._gaps[id];
+  $("dTitle").textContent = t;
+  $("dBody").innerHTML = (g ? `<p><span class="pill ${["grey","later"].includes(g[0]) ? "" : g[0]}">${g[0] === "later" ? "Hinweis" : "Lücke"}: ${esc(g[1])}</span></p>` : "") + `<dl>${b}</dl>`;
+  $("detail").classList.add("open");
+}
+
+function select(id){
+  S.sel = (S.sel === id) ? null : id;
+  applySelection();
+  if (S.sel) showDetail(S.sel); else $("detail").classList.remove("open");
+}
+
+// ---------- events
+document.addEventListener("click", ev => {
+  if (ev.target.id === "solLink"){ ev.preventDefault(); S.sel = null; applySelection(); showSol(); return; }
+  const go = ev.target.closest("[data-goto]");
+  if (go){ ev.preventDefault(); S.sel = null; select(go.dataset.goto); return; }
+  const chip = ev.target.closest(".chip[data-id]");
+  if (chip){ ev.stopPropagation(); S.sel = null; select(chip.dataset.id); return; }   // Kompetenz-Overlay
+  const el = ev.target.closest(".node[data-id], .ghead[data-id]");
+  if (el){ select(el.dataset.id); return; }
+  const j = ev.target.closest("[data-jump]");
+  if (j){
+    const t = j.dataset.jump;
+    const first = t === "pruefen"
+      ? document.querySelector(".chip.pruefen")
+      : [...document.querySelectorAll(".node.g-bad,.node.g-warn,.node.g-grey")].find(e => IX.N[e.dataset.id].type === t);
+    if (first) first.scrollIntoView({block:"center", behavior:"smooth"});
+  }
+});
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape"){ S.sel = null; applySelection(); $("detail").classList.remove("open"); }
+  if (ev.key === "Enter" && ev.target.classList.contains("node")) select(ev.target.dataset.id);
+});
+$("dClose").onclick = () => { S.sel = null; applySelection(); $("detail").classList.remove("open"); };
+$("fFach").onchange = e => { S.fach = e.target.value; store.set("fach", S.fach); S.sel = null; fillJg(); render(); $("detail").classList.remove("open"); };
+$("fJg").onchange = e => { S.jg = +e.target.value; store.set("jg", S.jg); S.sel = null; render(); $("detail").classList.remove("open"); };
+$("bGaps").onclick = () => { S.gaps = !S.gaps; document.body.classList.toggle("gaps", S.gaps); $("bGaps").classList.toggle("on", S.gaps); $("bOnly").style.display = S.gaps ? "" : "none"; if (!S.gaps){ S.only = false; document.body.classList.remove("only"); $("bOnly").classList.remove("on"); } };
+$("bOnly").onclick = () => { S.only = !S.only; document.body.classList.toggle("only", S.only); $("bOnly").classList.toggle("on", S.only); };
+$("bNotes").onclick = () => $("notes").classList.toggle("open");
+$("bLoad").onclick = () => $("file").click();
+$("file").onchange = e => { const f = e.target.files[0]; if (f) readFile(f); e.target.value = ""; };
+function readFile(f){
+  const r = new FileReader();
+  r.onload = () => { try { load(JSON.parse(r.result), f.name); $("notes").classList.remove("open"); } catch (err) { alertBox(err.message); } };
+  r.onerror = () => alertBox("Datei konnte nicht gelesen werden.");
+  r.readAsText(f, "utf-8");
+}
+function alertBox(msg){ $("notes").innerHTML = `<b>Fehler beim Laden:</b> ${esc(msg)}`; $("notes").classList.add("open"); }
+window.addEventListener("dragover", e => { e.preventDefault(); $("drop").style.display = "flex"; });
+window.addEventListener("dragleave", e => { if (e.target === $("drop")) $("drop").style.display = "none"; });
+window.addEventListener("drop", e => { e.preventDefault(); $("drop").style.display = "none"; const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+
+// ---------- start
+try {
+  if (EMBED) load(EMBED, "eingebettet");
+  else $("L2").innerHTML = '<div class="empty">Keine Daten eingebettet – bitte jap-data.json über „Daten laden…“ öffnen.</div>';
+} catch (err) { alertBox(err.message); }
+</script>
+</body>
+</html>

@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Taskcards-Vorlage</title>
+<style>
+:root{
+  --bg:#f6f5f2; --panel:#fff; --ink:#1d1f23; --muted:#6a6f78; --line:#e2e0da; --soft:#efede8;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --ok:#2e7d4f; --ok-soft:#e2f2e8; --warn:#a86a00; --warn-soft:#fbf0d9;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16181c; --panel:#1f2227; --ink:#e7e8ea; --muted:#9aa0a9; --line:#30343b; --soft:#262a30;
+    --accent:#7fb0e0; --accent-soft:#22313f; --ok:#6cc495; --ok-soft:#1d3127; --warn:#e0b05a; --warn-soft:#3a2f1a;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#16181c; --panel:#1f2227; --ink:#e7e8ea; --muted:#9aa0a9; --line:#30343b; --soft:#262a30;
+  --accent:#7fb0e0; --accent-soft:#22313f; --ok:#6cc495; --ok-soft:#1d3127; --warn:#e0b05a; --warn-soft:#3a2f1a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+button,input{font:inherit;color:inherit}
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+header h1{font-size:16px;margin:0}
+.meta{color:var(--muted);font-size:12.5px;margin-left:auto}
+nav{display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.tab{border:1px solid var(--line);background:var(--soft);border-radius:6px;padding:5px 10px;cursor:pointer}
+.tab.on{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.tab .prog{font-size:11.5px;opacity:.8;margin-left:6px}
+.btn{border:1px solid var(--line);background:var(--soft);border-radius:6px;padding:3px 8px;cursor:pointer;font-size:12.5px}
+.btn:hover{border-color:var(--accent)}
+.btn.done{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+#help{margin:10px 16px 0;background:var(--accent-soft);border-radius:8px;padding:10px 14px;font-size:13px}
+#help ol{margin:4px 0 0;padding-left:20px}
+#warn{margin:10px 16px 0;background:var(--warn-soft);border-radius:8px;padding:8px 14px;font-size:13px;display:none}
+.board-head{display:flex;align-items:center;gap:10px;padding:12px 16px 0}
+.board-head h2{font-size:15px;margin:0}
+main{flex:1;min-height:0;display:flex;gap:12px;overflow-x:auto;padding:12px 16px 16px;align-items:flex-start}
+.col{flex:0 0 330px;background:var(--panel);border:1px solid var(--line);border-radius:10px;max-height:100%;display:flex;flex-direction:column}
+.col h3{margin:0;padding:10px 12px;border-bottom:1px solid var(--line);font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.col .cards{overflow-y:auto;padding:8px}
+.card{border:1px solid var(--line);border-radius:8px;padding:9px 10px;margin-bottom:8px;background:var(--panel)}
+.card.is-done{border-color:var(--ok);background:var(--ok-soft)}
+.card.changed{border-color:var(--warn);background:var(--warn-soft)}
+.ct{font-weight:650;margin-bottom:6px}
+.cb{font-size:13px}
+.cb p{margin:4px 0} .cb ul{margin:2px 0 6px;padding-left:18px}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.files{margin-top:8px;border-top:1px dashed var(--line);padding-top:6px;font-size:12.5px}
+.files label{display:flex;gap:6px;align-items:flex-start;margin:3px 0}
+.files .path{color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:11.5px;word-break:break-all}
+.pill{display:inline-block;border-radius:999px;padding:0 7px;font-size:11px;background:var(--soft);color:var(--muted)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.link{display:flex;gap:6px;margin-top:6px} .link input{flex:1;min-width:0;border:1px solid var(--line);border-radius:6px;padding:3px 6px;background:var(--bg);font-size:12.5px}
+.link input.seeded{border-color:var(--ok)}
+.note{margin-top:4px;font-size:12.5px}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:6px 14px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:.92}
+/* progress lives in this browser only: say so loudly when it cannot be stored at all */
+#nostore{margin:10px 16px 0;background:var(--bad-soft);color:var(--bad);border-radius:8px;padding:8px 14px;font-size:13px;display:none}
+#nostore.open{display:block}
+.board-head .pill{margin-left:2px}
+.board-head a{color:var(--accent);font-size:12.5px}
+.pflege{margin:6px 16px 0;color:var(--muted);font-size:12.5px}
+#drop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);color:#fff;font-size:20px;z-index:20}
+</style>
+</head>
+<body>
+<header><h1 id="title"></h1><span class="meta" id="meta"></span>
+  <button class="btn" id="bSave" title="Häkchen und Links als Datei sichern">Fortschritt sichern</button>
+  <button class="btn" id="bRestore" title="Gesicherten Fortschritt einlesen">laden</button>
+  <button class="btn" id="bData" title="Andere taskcards-spec.json öffnen">Daten…</button>
+  <input type="file" id="fProg" accept=".json,application/json" hidden>
+  <input type="file" id="fSpec" accept=".json,application/json" hidden>
+</header>
+<nav id="tabs"></nav>
+<div id="nostore"></div>
+<div id="help">
+  <b>So überträgst du die Pinnwände</b>
+  <ol>
+    <li>Pinnwand mit <span class="pill ok">angelegt</span> gibt es schon – dort nur <b>abgleichen</b>, was sich geändert hat (gelbe Karten). Pinnwand mit <span class="pill warn">neu anlegen</span> von Hand erstellen: Spalten in der angezeigten Reihenfolge.</li>
+    <li>Je Karte „Titel kopieren“ und „Text kopieren“, in Taskcards einfügen, Dateien aus der Liste anhängen und abhaken.</li>
+    <li>Fehlt bei einer Übersichtskarte der <b>Link</b> zur TF-Pinnwand, hier eintragen – bekannte Links sind schon <span class="pill ok">vorbelegt</span>.</li>
+  </ol>
+  Häkchen und Links merkt sich nur dieser Browser – mit „Fortschritt sichern“ bekommst du sie als Datei.
+  Eine Karte wird <span class="pill warn">gelb</span>, wenn sie sich nach der Übertragung in Notion geändert hat.
+</div>
+<div id="warn"></div>
+<div class="board-head"><h2 id="bTitle"></h2><span id="bState"></span><button class="btn" id="copyBoardTitle">Pinnwand-Titel kopieren</button><span id="bLink"></span></div>
+<div class="pflege" id="bPflege"></div>
+<main id="board"></main>
+<div class="toast" id="toast"></div>
+<div id="drop">taskcards-spec.json oder gesicherten Fortschritt hier ablegen</div>
+<script>
+"use strict";
+let SPEC = null;   // replaced by build_taskcards.py with the board spec; null = load a file at runtime
+const PREFIX = "tc.";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// Everything this tool remembers about an ongoing transfer lives here. Under file:// and with
+// blocked site data localStorage can be missing or throw, so probe it once, fall back to memory
+// for the session, and tell the user instead of losing 79 ticks in silence.
+const store = {
+  ok: false,
+  mem: new Map(),
+  probe(){
+    try { localStorage.setItem(PREFIX + "__probe", "1"); const v = localStorage.getItem(PREFIX + "__probe");
+          localStorage.removeItem(PREFIX + "__probe"); this.ok = v === "1"; }
+    catch { this.ok = false; }
+    return this.ok;
+  },
+  get(k){
+    if (!this.ok) return this.mem.has(k) ? this.mem.get(k) : null;
+    try { return localStorage.getItem(PREFIX + k); } catch { return null; }
+  },
+  set(k, v){
+    if (!this.ok){ v == null ? this.mem.delete(k) : this.mem.set(k, String(v)); return; }
+    try { v == null ? localStorage.removeItem(PREFIX + k) : localStorage.setItem(PREFIX + k, v); } catch {}
+  },
+  all(){
+    const o = {};
+    if (!this.ok){ for (const [k, v] of this.mem) o[k] = v; return o; }
+    try { for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i);
+            if (k && k.startsWith(PREFIX) && !k.endsWith("__probe")) o[k.slice(PREFIX.length)] = localStorage.getItem(k); } }
+    catch {}
+    return o;
+  }
+};
+// short content hash: a stored 'done' flag remembers what was copied, so later changes are visible
+function hash(s){ let h = 5381; for (let i = 0; i < s.length; i++) h = (h * 33 ^ s.charCodeAt(i)) >>> 0; return h.toString(36); }
+let current = null;
+
+// A URL the build already knows (because the board exists) beats an empty field; one the user
+// typed beats both, so a wrong link stays correctable.
+function linkFor(boardId){
+  return store.get("link." + boardId) || (SPEC.links && SPEC.links[boardId]) || "";
+}
+function linkSeeded(boardId){ return !store.get("link." + boardId) && !!(SPEC.links && SPEC.links[boardId]); }
+function boardUrl(b){ return b.url || (SPEC.links && SPEC.links[b.id]) || ""; }
+function fill(s, asHtml){
+  // {{LINK:board}} -> entered Taskcards URL or a visible placeholder
+  return s.replace(/\{\{LINK:([^}]+)\}\}/g, (_, b) => {
+    const url = linkFor(b);
+    if (!url) return "[Link nach dem Anlegen eintragen]";
+    return asHtml ? `<a href="${esc(url)}">${esc(url)}</a>` : url;
+  });
+}
+function cardHash(c){ return hash(c.titel + "\n" + fill(c.text, false) + "\n" + c.dateien.map(f => f.datei).join("|")); }
+function cardState(c){ const s = store.get("done." + c.id); return !s ? "open" : (s === cardHash(c) ? "done" : "changed"); }
+
+function progress(b){
+  let n = 0, d = 0;
+  for (const col of b.spalten) for (const c of col.karten){ n++; if (cardState(c) === "done") d++; }
+  return [d, n];
+}
+
+function renderTabs(){
+  $("tabs").innerHTML = SPEC.boards.map(b => { const [d, n] = progress(b);
+    return `<button class="tab${b.id === current ? " on" : ""}" data-board="${esc(b.id)}">${esc(b.titel)}<span class="prog">${d}/${n}</span></button>`; }).join("");
+}
+
+function renderBoard(){
+  const b = SPEC.boards.find(x => x.id === current);
+  const url = boardUrl(b);
+  $("bTitle").textContent = b.titel;
+  // An existing board is reconciled, not recreated – otherwise you build a second one next to it.
+  $("bState").innerHTML = url ? '<span class="pill ok">angelegt</span>' : '<span class="pill warn">neu anlegen</span>';
+  $("bLink").innerHTML = url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Pinnwand öffnen</a>` : "";
+  $("bPflege").textContent = b.pflege || "";
+  $("board").innerHTML = b.spalten.map((col, ci) => `
+    <section class="col"><h3><span>${ci + 1}. ${esc(col.titel)}</span><button class="btn" data-copy-plain="${esc(col.titel)}">Spaltentitel</button></h3>
+    <div class="cards">${col.karten.map(cardHtml).join("")}</div></section>`).join("");
+  renderTabs();
+}
+
+function cardHtml(c){
+  const st = cardState(c);
+  const files = c.dateien.length ? `<div class="files">${c.dateien.map(f => fileHtml(c, f)).join("")}</div>` : "";
+  const seeded = c.link_slot && linkSeeded(c.link_slot);
+  const link = c.link_slot
+    ? `<div class="link"><input placeholder="Link zur TF-Pinnwand einfügen" data-link="${esc(c.link_slot)}" value="${esc(linkFor(c.link_slot))}"${seeded ? ' class="seeded" title="Link aus dem Datensatz – die Pinnwand existiert bereits"' : ""}></div>`
+      + (seeded ? '<div class="note"><span class="pill ok">vorbelegt</span></div>' : "")
+    : "";
+  return `<article class="card${st === "done" ? " is-done" : st === "changed" ? " changed" : ""}" data-card="${esc(c.id)}">
+    <div class="ct">${esc(c.titel)}${st === "changed" ? ' <span class="pill warn">geändert seit Übertragung</span>' : ""}</div>
+    <div class="cb">${fill(c.html, true)}</div>${link}${files}
+    <div class="row"><button class="btn" data-act="title">Titel kopieren</button><button class="btn" data-act="text">Text kopieren</button>
+    <label><input type="checkbox" data-act="done"${st === "done" ? " checked" : ""}> übertragen</label></div></article>`;
+}
+
+function fileHtml(c, f){
+  if (!f.hochladen) return `<label><span class="pill">nur lokal</span> ${esc(f.titel)}</label>`;
+  const key = `file.${c.id}.${f.mat}`;
+  const status = f.status === "gefunden" ? '<span class="pill ok">gefunden</span>' :
+                 f.status === "nicht geprüft" ? "" : `<span class="pill warn">${esc(f.status)}</span>`;
+  const path = (f.pfade && f.pfade.length ? f.pfade.join(" | ") : f.datei);
+  return `<label><input type="checkbox" data-file="${esc(key)}"${store.get(key) ? " checked" : ""}>
+    <span>${esc(f.titel)} ${status}${f.annahme ? ' <span class="pill" title="Zuordnung ist eine Prototyp-Annahme">Annahme</span>' : ""}<br><span class="path">${esc(path)}</span></span></label>`;
+}
+
+// ---------- clipboard: rich text for Taskcards' editor, plain text as fallback
+async function copy(htmlStr, text){
+  try {
+    if (htmlStr && window.ClipboardItem && navigator.clipboard && navigator.clipboard.write){
+      await navigator.clipboard.write([new ClipboardItem({"text/html": new Blob([htmlStr], {type:"text/html"}),
+                                                          "text/plain": new Blob([text], {type:"text/plain"})})]);
+    } else if (navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text);
+    } else throw new Error("no clipboard api");
+    toast("Kopiert");
+  } catch {
+    // file:// or older browsers: select a temporary element and use execCommand
+    const el = document.createElement("div");
+    el.contentEditable = "true"; el.style.position = "fixed"; el.style.left = "-9999px";
+    if (htmlStr) el.innerHTML = htmlStr; else el.textContent = text;
+    document.body.appendChild(el);
+    const r = document.createRange(); r.selectNodeContents(el);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    const ok = document.execCommand("copy");
+    sel.removeAllRanges(); el.remove();
+    toast(ok ? "Kopiert" : "Kopieren nicht möglich – bitte Text markieren und Strg+C");
+  }
+}
+let tt; function toast(m){ const t = $("toast"); t.textContent = m; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 1300); }
+
+function findCard(id){ for (const b of SPEC.boards) for (const col of b.spalten) for (const c of col.karten) if (c.id === id) return c; return null; }
+
+document.addEventListener("click", ev => {
+  const tab = ev.target.closest("[data-board]");
+  if (tab){ current = tab.dataset.board; store.set("board", current); renderBoard(); return; }
+  const plain = ev.target.closest("[data-copy-plain]");
+  if (plain){ copy(null, plain.dataset.copyPlain); return; }
+  const btn = ev.target.closest("button[data-act]");
+  if (btn){
+    const c = findCard(btn.closest("[data-card]").dataset.card);
+    if (btn.dataset.act === "title") copy(null, c.titel);
+    if (btn.dataset.act === "text") copy(fill(c.html, true), fill(c.text, false));
+    btn.classList.add("done");
+  }
+});
+document.addEventListener("change", ev => {
+  const t = ev.target;
+  if (t.dataset.act === "done"){
+    const c = findCard(t.closest("[data-card]").dataset.card);
+    store.set("done." + c.id, t.checked ? cardHash(c) : null);
+    renderBoard();
+  } else if (t.dataset.file){
+    store.set(t.dataset.file, t.checked ? "1" : null);
+  } else if (t.dataset.link){
+    store.set("link." + t.dataset.link, t.value.trim() || null);
+    renderBoard();
+  }
+});
+$("copyBoardTitle").onclick = () => copy(null, $("bTitle").textContent);
+
+// ---------- progress as a file: survives a cleared browser, a second device, and no localStorage
+function saveProgress(){
+  const payload = {tool: "taskcards-vorlage", schema_version: 1, scope: SPEC ? SPEC.scope : null,
+                   stichtag: SPEC ? SPEC.stichtag : null, exported_at: new Date().toISOString(), entries: store.all()};
+  const n = Object.keys(payload.entries).length;
+  if (!n){ toast("Noch kein Fortschritt zu sichern"); return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], {type: "application/json"}));
+  a.download = "taskcards-fortschritt.json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(`${n} Einträge gesichert`);
+}
+function restoreProgress(data){
+  if (!data || typeof data.entries !== "object" || !data.entries) throw new Error("Keine Fortschritts-Datei (Feld „entries“ fehlt).");
+  let n = 0;
+  for (const [k, v] of Object.entries(data.entries)){ store.set(k, v); n++; }
+  const saved = store.get("board");
+  if (SPEC && SPEC.boards.some(b => b.id === saved)) current = saved;
+  if (SPEC) renderBoard();
+  toast(`${n} Einträge geladen`);
+}
+
+// ---------- spec loading, so the template works without embedded data
+function loadSpec(data, origin){
+  if (!data || !Array.isArray(data.boards) || !data.boards.length) throw new Error("Keine gültige taskcards-spec.json (Feld „boards“ fehlt oder ist leer).");
+  if (data.schema_version != null && data.schema_version !== 1) throw new Error(`Schema-Version ${data.schema_version} passt nicht zu dieser Vorlage (erwartet 1).`);
+  SPEC = data;
+  SPEC.warnungen = SPEC.warnungen || [];
+  $("title").textContent = "Taskcards-Vorlage · " + (SPEC.scope || "ohne Titel");
+  $("meta").textContent = `Datenstand ${SPEC.stichtag || "?"}`
+    + (SPEC.material_root_geprueft ? " · Dateien geprüft" : " · Dateien nicht geprüft")
+    + (origin ? " · " + origin : "");
+  $("warn").style.display = SPEC.warnungen.length ? "block" : "none";
+  $("warn").innerHTML = SPEC.warnungen.length ? "<b>Hinweise</b><ul>" + SPEC.warnungen.map(w => `<li>${esc(w)}</li>`).join("") + "</ul>" : "";
+  const saved = store.get("board");
+  // start on a board that still has to be built; an existing one is only reconciled
+  current = SPEC.boards.some(b => b.id === saved) ? saved
+          : (SPEC.boards.find(b => !boardUrl(b)) || SPEC.boards.find(b => b.art === "tf") || SPEC.boards[0]).id;
+  renderBoard();
+}
+function fail(msg){ $("warn").style.display = "block"; $("warn").innerHTML = `<b>Fehler beim Laden:</b> ${esc(msg)}`; }
+
+// A dropped or picked file is either a spec or a saved progress file – decide by its content.
+function readJson(f){
+  const r = new FileReader();
+  r.onload = () => {
+    let data;
+    try { data = JSON.parse(r.result); } catch { fail("Datei ist kein gültiges JSON."); return; }
+    try { if (data && Array.isArray(data.boards)) loadSpec(data, f.name); else restoreProgress(data); }
+    catch (err) { fail(err.message); }
+  };
+  r.onerror = () => fail("Datei konnte nicht gelesen werden.");
+  r.readAsText(f, "utf-8");
+}
+$("bSave").onclick = saveProgress;
+$("bRestore").onclick = () => $("fProg").click();
+$("bData").onclick = () => $("fSpec").click();
+$("fProg").onchange = e => { const f = e.target.files[0]; if (f) readJson(f); e.target.value = ""; };
+$("fSpec").onchange = e => { const f = e.target.files[0]; if (f) readJson(f); e.target.value = ""; };
+window.addEventListener("dragover", e => { e.preventDefault(); $("drop").style.display = "flex"; });
+window.addEventListener("dragleave", e => { if (e.target === $("drop")) $("drop").style.display = "none"; });
+window.addEventListener("drop", e => { e.preventDefault(); $("drop").style.display = "none"; const f = e.dataTransfer.files[0]; if (f) readJson(f); });
+
+// ---------- start
+if (!store.probe()){
+  $("nostore").classList.add("open");
+  $("nostore").innerHTML = "<b>Dieser Browser speichert nichts.</b> Häkchen und Links gelten nur, solange die Seite offen ist – " +
+    "vor dem Schließen auf <b>Fortschritt sichern</b> klicken und die Datei später über <b>laden</b> zurückholen. " +
+    "(Häufig bei Dateien, die direkt vom Datenträger geöffnet werden, oder bei blockierten Website-Daten.)";
+}
+try {
+  if (SPEC) loadSpec(SPEC, "eingebettet");
+  else fail("Keine Daten eingebettet – bitte taskcards-spec.json über „Daten…“ öffnen oder hier ablegen.");
+} catch (err) { fail(err.message); }
+</script>
+</body>
+</html>
