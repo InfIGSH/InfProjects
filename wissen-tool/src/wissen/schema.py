@@ -25,7 +25,7 @@ ROHMATERIAL_HINWEIS = "Rohmaterial — wird nicht ins Buch zitiert."
 KOPFFELDER = [
     "Titel", "Kanal", "Plattform", "Kurs", "Modul", "Lektion",
     "URL", "Video", "Datei", "Veröffentlicht", "Erfassungsdatum", "Abdeckung",
-    "Screenshots", "Original",
+    "Screenshots", "Original", "Prüfung",
 ]
 
 

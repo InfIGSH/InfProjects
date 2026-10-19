@@ -426,3 +426,60 @@ def test_lade_seite_erfasst_drei_videos_trotz_dom_transkript(tmp_path, monkeypat
     assert 'Video 3: Transkript 0:00' in felder['Abdeckung']
     assert 'Panel nur von Video 1' not in inhalt
     assert len(meldungen) == 3
+
+
+def test_finde_videos_erfasst_lazy_iframe_und_entdoppelt_geladenen_frame():
+    url = 'https://player.vimeo.com/video/123?h=abc'
+    rahmen = [_FakeFrame(url='https://kurs.de/l', html=(
+        f'<iframe data-src="{url}"></iframe><iframe src="{url}"></iframe>')),
+        _FakeFrame(url=url)]
+    assert web.finde_videos(rahmen) == [(url, 'Vimeo')]
+
+
+def test_dom_untertiteleinstellungen_sind_keine_transkripte(tmp_path, monkeypatch):
+    dialog = 'Font size Font family Background color Text opacity ' * 10
+    frame = _FakeFrame(texte={'#captions': dialog})
+    monkeypatch.setattr(web.erkennung, 'bester_kandidat', lambda *a: (
+        {'selektor': '#captions', 'grund': 'benennung', 'zeitmarken': 0}, frame))
+    assert web._transkript_aus_dom([frame], {'transkript': ['#captions']}) == ('', '')
+
+
+def test_automatisches_dom_transkript_braucht_zeitmarken(monkeypatch):
+    frame = _FakeFrame(texte={'#captions': 'Subtitles English Deutsch Captions settings ' * 20})
+    monkeypatch.setattr(web.erkennung, 'bester_kandidat', lambda *a: (
+        {'selektor': '#captions', 'grund': 'benennung', 'zeitmarken': 0}, frame))
+    assert web._transkript_aus_dom([frame], {}) == ('', '')
+
+
+def test_automatisches_dom_transkript_mit_zeitmarken(monkeypatch):
+    text = '\n'.join(f'0:{n:02d} Gesprochener Inhalt dieser Lektion.' for n in range(10))
+    frame = _FakeFrame(texte={'#transcript': text})
+    monkeypatch.setattr(web.erkennung, 'bester_kandidat', lambda *a: (
+        {'selektor': '#transcript', 'grund': 'zeitmarken', 'zeitmarken': 10}, frame))
+    assert web._transkript_aus_dom([frame], {})[0] == text
+
+
+def test_cookie_bloecke_entfernen_begleittext_behalten():
+    text = 'We use cookies. Accept all or reject.\n\nAufgabe: Schreibe acht Takte.'
+    assert web.bereinige_seitentext(text) == 'Aufgabe: Schreibe acht Takte.'
+
+
+def test_dokument_hat_vorrang_vor_laengerem_playertext():
+    player = _FakeFrame(url='https://player.vimeo.com/video/1', texte={'body': 'Cookie consent accept all ' * 100})
+    dokument = _FakeFrame(url='https://campus.thinkspace.ac.uk/student/document/byid/813',
+                          texte={'body': 'Aufgabe: Schreibe acht Takte. ' * 10})
+    assert 'Aufgabe' in web._hauptinhalt([player, dokument], {})
+    assert 'Cookie' not in web._hauptinhalt([player, dokument], {})
+
+
+def test_player_pruefung_meldet_innere_luecke_und_auto_caption_unsicherheit(tmp_path, monkeypatch):
+    from wissen import youtube, vtt
+    spur = _spur(500, 509)
+    spur['kacheln'] = [vtt.Kachel(0, 5, 'Anfang'), vtt.Kachel(200, 505, 'Ende')]
+    monkeypatch.setattr(youtube, 'spur_laden', lambda *a, **k: spur)
+    _, felder, _ = web._transkript_vom_player(_cfg(tmp_path), VIDEO, SEITE, {})
+    assert 'Zeitlücken ohne Untertitel' in felder['Prüfung']
+    assert '0:05–3:20' in felder['Prüfung']
+    assert 'Akkordnamen' in felder['Prüfung']
+    # Die Endzeit allein würde diese Lücke nicht erkennen.
+    assert 'UNVOLLSTÄNDIG' not in felder['Abdeckung']

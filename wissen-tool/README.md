@@ -317,3 +317,40 @@ Massendownloads verstoßen bei YouTube und den meisten Kursplattformen gegen
 die Nutzungsbedingungen. Für den eigenen Lernbestand ist das üblich; für
 Weitergabe oder Veröffentlichung ist es das nicht. Jede abgelegte Datei trägt
 den Hinweis, dass sie Rohmaterial ist und nicht ins Buch zitiert wird.
+
+## Kursbestand prüfen
+
+Nach einem frischen `wissen links <kursübersicht>` die erzeugte Liste mit der
+Kursnavigation vergleichen: Nur diese Listeneinträge werden geprüft. Ein Audit
+von 77 Dateien kann keine fehlenden Lektionen außerhalb seiner Liste erkennen.
+
+```powershell
+wissen audit --liste ".\berichte\<kurs>.liste.txt" --ausgabe ".\berichte\audit"
+```
+
+Der Befehl verwendet die bestehende Browser-Anmeldung, öffnet jede gelistete
+Lektion und vergleicht erkannte Player mit den vorhandenen Dateien im Eingang
+und in `verarbeitet/`. Er schreibt `kurs-audit.md` und `kurs-audit.json`, ohne
+Lektionsdateien oder Kursfortschritt zu ändern. Der Bericht enthält auch
+Abruffehler, Videos ohne zugeordnetes zeitgestempeltes Transkript, verdächtige
+Untertitel-Einstellungsdialoge, Cookie-Hinweise und weitere Medienquellen ohne
+unterstützten Player. „Kein Player“ bedeutet nicht automatisch einen Fehler:
+Aufgaben, Ressourcen und Quizseiten brauchen gegebenenfalls kein Transkript.
+
+Nach Sichtung bei Bedarf mit derselben Liste und `wissen kurs --liste ...
+--praefix ... --neu-laden` erneut erfassen. Bekannte Player werden jetzt auch
+in `src`, `data-src` und `data-lazy-src` von Medienelementen gesucht. Automatisch
+erkannte DOM-Transkripte müssen mindestens fünf Zeitmarken enthalten;
+Untertitel-Einstellungsdialoge werden ausgeschlossen. Bei erkannten Playern
+wird bevorzugt die echte Untertitelspur abgerufen. Der Dokumentframe erhält
+Vorrang vor Player- und Navigationstext; bekannte Cookie-Overlays werden bei
+der Textextraktion entfernt. Fehlender Seitentext bleibt ein Prüffall.
+
+**Kein Vollständigkeitsversprechen:** Erst nach Interaktion erzeugte Videos
+können weiterhin fehlen. Ein Loginfehler oder nicht unterstützter Player muss
+geklärt werden. Neue Erfassungen weisen größere Zeitlücken in Untertitelspuren
+aus; solche Lücken können auch Musik oder Stille sein. Endzeiten und vorhandene
+Zeitmarken bestätigen weder lückenlose Sprache noch fachliche Richtigkeit.
+Hörabhängige Aussagen und Akkordnamen aus Auto-Captions bleiben unsicher und
+müssen beim Einarbeiten gezielt am Video geprüft werden. Das Werkzeug hört
+die Videos nicht ab und korrigiert keine Akkordnamen automatisch.

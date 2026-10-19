@@ -157,19 +157,56 @@ def rahmen_von(seite) -> list:
     return list(seite.frames)
 
 
-def finde_videos(rahmen: list) -> list[tuple[str, str]]:
-    """Alle eindeutigen Player in Frame-Reihenfolge, ohne Zeitanker."""
-    ergebnis = []
-    gesehen = set()
+def frame_quellen(rahmen: list) -> list[str]:
+    """Geladene Frames und deklarierte Medien, auch noch ungeladene iframes."""
+    from html.parser import HTMLParser
+    from urllib.parse import urljoin
+
+    quellen = []
     for frame in rahmen:
-        url = (frame.url or "").split("#")[0]
+        quellen.append(frame.url or "")
+
+        class Medien(HTMLParser):
+            def handle_starttag(self, tag, attrs):
+                if tag not in {"iframe", "video", "source", "embed", "object"}:
+                    return
+                for name, wert in attrs:
+                    if name in {"src", "data-src", "data-lazy-src", "data"} and wert:
+                        quellen.append(urljoin(frame.url or "", wert))
+
+        with contextlib.suppress(Exception):
+            Medien().feed(frame.content())
+    return list(dict.fromkeys(q.split("#")[0] for q in quellen if q))
+
+
+def finde_videos(rahmen: list) -> list[tuple[str, str]]:
+    """Alle eindeutigen Player aus Frames und Medienattributen."""
+    ergebnis = []
+    for url in frame_quellen(rahmen):
         for muster, anbieter in VIDEO_MUSTER:
             if muster.search(url):
-                if url not in gesehen:
-                    gesehen.add(url)
-                    ergebnis.append((url, anbieter))
+                ergebnis.append((url, anbieter))
                 break
     return ergebnis
+
+
+def ist_einstellungsdialog(text: str) -> bool:
+    klein = text.lower()
+    begriffe = ("font size", "font family", "font color", "background color",
+                "text opacity", "background opacity", "window color", "edge style",
+                "schriftgröße", "schriftfarbe", "hintergrundfarbe")
+    return sum(w in klein for w in begriffe) >= 3
+
+
+def bereinige_seitentext(text: str) -> str:
+    """Cookie-Abschnitte entfernen, ohne Einwilligung anzuklicken."""
+    bloecke = re.split(r"\n\s*\n", text)
+    return "\n\n".join(b for b in bloecke if not (
+        "cookie" in b.lower() and any(w in b.lower() for w in (
+            "consent", "accept", "reject", "preferences", "einwillig", "akzeptier",
+            "zustimm", "berechtigt", "ablehnen", "legitimate interest",
+        ))
+    )).strip()
 
 
 def finde_video(rahmen: list) -> tuple[str, str] | None:
@@ -203,14 +240,20 @@ def _inhalt_geraten(frame) -> str:
                 text = trafilatura.extract(
                     html, include_comments=False,
                     include_tables=True, favor_recall=True,
+                    prune_xpath=["//*[@id='onetrust-banner-sdk']", "//*[@id='onetrust-consent-sdk']",
+                                 "//*[@id='CybotCookiebotDialog']", "//*[@id='cookie-banner']"],
                 )
                 if text and len(text.strip()) > 100:
-                    return text.strip()
+                    bereinigt = bereinige_seitentext(text.strip())
+                    if bereinigt:
+                        return bereinigt
 
     for selektor in ("main", "article", "[role='main']", "body"):
         text = _text_aus_selektor(frame, selektor)
         if len(text) > 100:
-            return text
+            text = bereinige_seitentext(text)
+            if text:
+                return text
     return ""
 
 
@@ -234,8 +277,11 @@ def _hauptinhalt(rahmen: list, regeln: dict) -> str:
         if bester:
             return bester
 
+    dokumente = [f for f in rahmen if re.search(r"/student/document/(?:byid|view)/", f.url or "")]
     bester = ""
-    for frame in rahmen:
+    for frame in dokumente or rahmen:
+        if any(m.search(frame.url or "") for m, _ in VIDEO_MUSTER):
+            continue
         text = _inhalt_geraten(frame)
         if len(text) > len(bester):
             bester = text
@@ -251,7 +297,7 @@ def _transkript_aus_dom(rahmen: list, regeln: dict) -> tuple[str, str]:
                 element = frame.query_selector(selektor)
                 if element:
                     text = (element.inner_text() or "").strip()
-                    if len(text) >= MIN_TRANSKRIPT:
+                    if len(text) >= MIN_TRANSKRIPT and not ist_einstellungsdialog(text):
                         return _aufraeumen(text), f"Selektor {selektor}"
 
     kandidat, frame = erkennung.bester_kandidat(rahmen, MIN_TRANSKRIPT)
@@ -261,7 +307,8 @@ def _transkript_aus_dom(rahmen: list, regeln: dict) -> tuple[str, str]:
         element = frame.query_selector(kandidat["selektor"])
         if element:
             text = (element.inner_text() or "").strip()
-            if len(text) >= MIN_TRANSKRIPT:
+            if (len(text) >= MIN_TRANSKRIPT and not ist_einstellungsdialog(text)
+                    and len(re.findall(r"\b\d{1,2}:\d{2}(?::\d{2})?\b", text)) >= 5):
                 wie = (
                     f"automatisch erkannt ({kandidat['grund']}, "
                     f"{kandidat['zeitmarken']} Zeitmarken, "
@@ -321,6 +368,21 @@ def _transkript_vom_player(
     felder["Abdeckung"] = schema.abdeckung(letzte, dauer, spur["automatisch"])
     if luecke is not None and luecke > cfg.max_luecke:
         felder["Abdeckung"] += f" — UNVOLLSTÄNDIG, {int(luecke)} s fehlen"
+    luecken = []
+    kacheln = sorted(spur["kacheln"], key=lambda k: k.start)
+    ende = 0
+    for kachel in kacheln:
+        if kachel.start - ende > cfg.max_luecke:
+            luecken.append(f"{schema.zeit_kurz(ende)}–{schema.zeit_kurz(kachel.start)}")
+        ende = max(ende, kachel.ende)
+    felder["Prüfung"] = (
+        "Zeitlücken ohne Untertitel (können Musik/Stille sein): " + ", ".join(luecken)
+        if luecken else "Keine großen Zeitlücken erkannt; Inhalt ungeprüft"
+    )
+    if dauer is None:
+        felder["Prüfung"] += "; Videodauer unbekannt"
+    if spur["automatisch"]:
+        felder["Prüfung"] += "; Auto-Captions: Akkordnamen und hörabhängige Aussagen unsicher"
     nachricht = (
         f"Transkript aus dem {anbieter}-Player geholt "
         f"(Sprache {spur['sprache']}, "
@@ -341,7 +403,7 @@ def _transkripte_von_playern(cfg, videos, seiten_url, felder):
         abdeckungen.append(f"Video {nr}: {abdeckung}")
         meldungen.append(f"Video {nr}/{len(videos)}: {nachricht}")
         teile += [f"### Video {nr}", "", f"- Video: {video_felder['Video']}",
-                  f"- Abdeckung: {abdeckung}", "", text or "_(kein Transkript abrufbar)_", ""]
+                  f"- Abdeckung: {abdeckung}", f"- Prüfung: {video_felder.get('Prüfung', 'Abruf fehlgeschlagen')}", "", text or "_(kein Transkript abrufbar)_", ""]
     felder["Video"] = "; ".join(quellen)
     felder["Abdeckung"] = "; ".join(abdeckungen)
     return "\n".join(teile).strip(), felder, meldungen
@@ -414,6 +476,11 @@ def lade_seite(
                 cfg, videos, url, felder
             )
             meldungen.extend(nachrichten)
+        elif videos:
+            transkript, felder, nachricht = _transkript_vom_player(
+                cfg, videos[0], url, felder
+            )
+            meldungen.append(nachricht)
         elif transkript:
             letzte = _letzte_zeitmarke(transkript)
             felder["Abdeckung"] = (
@@ -449,6 +516,13 @@ def lade_seite(
         if transkript:
             teile += ["## Transkript", "", transkript, ""]
         teile += ["## Seitentext", "", seitentext or "_(kein Text gefunden)_"]
+        teile += ["", "## Erfassungsprüfung", "",
+                  f"- Erkannte Player: {len(videos)}",
+                  "- Suchumfang: geladene Frames und deklarierte Medienattribute; dynamisch erst nach Interaktion erzeugte Videos bleiben ungeprüft.",
+                  "- Zeitstempel und Endzeit belegen keine lückenlose oder inhaltlich korrekte Erfassung.",
+                  "- Hörabhängige Aussagen und Akkordnamen aus Auto-Captions: unsicher; gezielt am Video prüfen."]
+        if not seitentext:
+            teile.append("- Seitentext fehlt oder bestand nur aus Cookie-Hinweisen; Aufgaben und Begleitmaterial manuell prüfen.")
         if felder.get("Screenshots"):
             teile += ["", "## Seitenbild", "",
                       f"![Seitenbild]({ablage.rel_von(bild, pfad)})"]

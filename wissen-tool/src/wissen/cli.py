@@ -147,6 +147,18 @@ def befehl_links(args) -> int:
     return 0
 
 
+def befehl_audit(args) -> int:
+    from . import audit
+
+    cfg, ablage = _ablage(args)
+    bericht = audit.pruefe_kurs(
+        cfg, ablage, Path(args.liste).expanduser(),
+        Path(args.ausgabe).expanduser().resolve(), headless=args.headless,
+    )
+    print(f"Prüfbericht: {bericht}")
+    return 0
+
+
 def befehl_kurs(args) -> int:
     from . import web
 
@@ -320,6 +332,12 @@ def baue_parser() -> argparse.ArgumentParser:
     s.add_argument("--neu-laden", action="store_true",
                    help="auch schon erfasste URLs erneut holen")
     s.set_defaults(func=befehl_kurs)
+
+    s = unter.add_parser("audit", help="Live-Player mit vorhandenen Lektionsdateien abgleichen")
+    s.add_argument("--liste", required=True)
+    s.add_argument("--ausgabe", default="berichte/audit")
+    s.add_argument("--headless", action="store_true")
+    s.set_defaults(func=befehl_audit)
 
     s = unter.add_parser("links", help="Lektions-URLs einer Kursseite sammeln")
     s.add_argument("url", help="Kursübersicht, von der aus die Lektionen erreichbar sind")
