@@ -483,3 +483,24 @@ def test_player_pruefung_meldet_innere_luecke_und_auto_caption_unsicherheit(tmp_
     assert 'Akkordnamen' in felder['Prüfung']
     # Die Endzeit allein würde diese Lücke nicht erkennen.
     assert 'UNVOLLSTÄNDIG' not in felder['Abdeckung']
+
+
+def test_gleichnamige_lektionen_bekommen_unterschiedliche_dateien(tmp_path):
+    ablage = _ablage_mit(tmp_path, [])
+    erster, media1 = web._lektionspfad(ablage, 'kurs', 'Introduction and Overview', 'https://kurs.de/1')
+    zweiter, media2 = web._lektionspfad(ablage, 'kurs', 'Introduction and Overview', 'https://kurs.de/2')
+    assert erster != zweiter
+    assert ablage.media_ordner(media1) != ablage.media_ordner(media2)
+    assert web._lektionspfad(ablage, 'kurs', 'Introduction and Overview', 'https://kurs.de/1/')[0] == erster
+
+
+def test_neuladen_nutzt_vorhandene_eingangsdatei_aber_nicht_verarbeitet(tmp_path):
+    url = 'https://kurs.de/1'
+    ablage = _ablage_mit(tmp_path, [url])
+    vorhanden = ablage.finde_nach_url(url)
+    assert web._lektionspfad(ablage, 'kurs', 'Neuer Titel', url)[0] == vorhanden
+    verarbeitet = ablage.verschiebe_verarbeitet(vorhanden)
+    neu, _ = web._lektionspfad(ablage, 'kurs', 'Neuer Titel', url)
+    assert neu.parent == ablage.eingang
+    assert neu != verarbeitet
+    assert verarbeitet.exists()

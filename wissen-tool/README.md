@@ -354,3 +354,11 @@ Zeitmarken bestätigen weder lückenlose Sprache noch fachliche Richtigkeit.
 Hörabhängige Aussagen und Akkordnamen aus Auto-Captions bleiben unsicher und
 müssen beim Einarbeiten gezielt am Video geprüft werden. Das Werkzeug hört
 die Videos nicht ab und korrigiert keine Akkordnamen automatisch.
+
+Lektionsdateien und Medienordner erhalten neben dem Titel eine stabile
+URL-Kennung. Gleichnamige Lektionen verschiedener Module überschreiben sich
+dadurch nicht mehr. Beim erneuten Erfassen einer bereits bekannten URL wird
+ihre vorhandene Datei im Eingang weiterverwendet; Dateien in `verarbeitet/`
+bleiben unverändert. Durch frühere Namenskollisionen verlorene Lektionen müssen
+mit der vollständigen URL-Liste oder einer gezielten Nacherfassung erneut
+abgerufen werden.

@@ -409,6 +409,15 @@ def _transkripte_von_playern(cfg, videos, seiten_url, felder):
     return "\n".join(teile).strip(), felder, meldungen
 
 
+def _lektionspfad(ablage, praefix: str, titel: str, url: str) -> tuple[Path, str]:
+    """URL trennt gleichnamige Lektionen; vorhandene Eingangsdatei weiter nutzen."""
+    kennung = schema.slugify(titel, 28) + "-" + schema.kurz_hash(ablage.url_marke(url))
+    vorhanden = ablage.finde_nach_url(url)
+    if vorhanden is not None and vorhanden.parent == ablage.eingang:
+        return vorhanden, kennung
+    return ablage.eingang_pfad(praefix, kennung), kennung
+
+
 # -- Hauptfunktion -------------------------------------------------------
 
 
@@ -459,7 +468,7 @@ def lade_seite(
         transkript, wie = _transkript_aus_dom(rahmen, regeln)
         seitentext = _aufraeumen(_hauptinhalt(rahmen, regeln))
 
-        kennung = schema.slugify(lektion or seiten_titel, 50)
+        pfad, kennung = _lektionspfad(ablage, praefix, lektion or seiten_titel, url)
         felder = {
             "Titel": seiten_titel,
             "Plattform": (regeln.get("plattform") or _host(url)),
@@ -503,8 +512,6 @@ def lade_seite(
                     "Kein Transkript im DOM und kein eingebetteter Player. "
                     "'wissen inspect <url>' zeigt, was auf der Seite steht."
                 )
-
-        pfad = ablage.eingang_pfad(praefix, kennung)
 
         if screenshot:
             ordner = ablage.media_ordner(kennung)
