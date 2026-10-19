@@ -72,8 +72,24 @@ def lade(explizit: str | os.PathLike | None = None) -> Konfig:
             "Keine wissen.toml gefunden. Lege eine an (Vorlage: wissen.toml.example) "
             "oder setze $WISSEN_CONFIG auf ihren Pfad."
         )
-    with open(pfad, "rb") as fh:
-        daten = tomllib.load(fh)
+    # Nicht tomllib.load(datei): Notepad und andere Windows-Editoren schreiben
+    # der Datei gern eine unsichtbare Byte-Order-Mark voran, an der der Parser
+    # in der ersten Zeile scheitert. 'utf-8-sig' entfernt sie, falls vorhanden.
+    try:
+        text = pfad.read_bytes().decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise KonfigFehler(
+            f"{pfad} ist nicht UTF-8-kodiert. Im Editor erneut als UTF-8 "
+            f"speichern. ({exc})"
+        ) from exc
+    try:
+        daten = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise KonfigFehler(
+            f"{pfad} ist keine gültige TOML-Datei: {exc}\n"
+            "Häufigste Ursache unter Windows: einfache Backslashes im Pfad. "
+            'Schrägstriche nehmen, z.B. pfad = "C:/Users/Name/Ordner".'
+        ) from exc
 
     ablage_roh = (daten.get("ablage") or {}).get("pfad")
     if not ablage_roh:

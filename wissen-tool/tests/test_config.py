@@ -40,6 +40,30 @@ warte_ms = 3000
     assert cfg.browser_profil == tmp_path / "profil"
 
 
+def test_lade_vertraegt_byte_order_mark(tmp_path):
+    # Notepad schreibt gern eine BOM voran; tomllib allein scheitert daran.
+    pfad = tmp_path / "wissen.toml"
+    pfad.write_bytes(
+        b"\xef\xbb\xbf" + f'[ablage]\npfad = "{tmp_path / "Basis"}"\n'.encode("utf-8")
+    )
+    assert config.lade(pfad).ablage == tmp_path / "Basis"
+
+
+def test_kaputtes_toml_nennt_datei_und_haeufigste_ursache(tmp_path):
+    pfad = _schreibe(tmp_path, '[ablage]\npfad = "C:\\Users\\Rene\\buch"\n')
+    with pytest.raises(config.KonfigFehler) as fehler:
+        config.lade(pfad)
+    assert "wissen.toml" in str(fehler.value)
+    assert "Schrägstriche" in str(fehler.value)
+
+
+def test_nicht_utf8_meldet_kodierung(tmp_path):
+    pfad = tmp_path / "wissen.toml"
+    pfad.write_bytes('[ablage]\npfad = "Büch"\n'.encode("latin-1"))
+    with pytest.raises(config.KonfigFehler, match="UTF-8"):
+        config.lade(pfad)
+
+
 def test_fehlende_ablage_meldet_fehler(tmp_path):
     pfad = _schreibe(tmp_path, '[youtube]\nsprachen = ["de"]\n')
     with pytest.raises(config.KonfigFehler, match="ablage"):
