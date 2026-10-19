@@ -166,18 +166,38 @@ Oder ein ganzes Modul aus einer URL-Liste – der Browser bleibt dabei offen,
 die Anmeldung gilt durchgehend:
 
 ```bash
-cat > modul2.txt <<'EOF'
-https://campus.thinkspace.ac.uk/... | Introduction and Overview
-https://campus.thinkspace.ac.uk/... | How to Write a Melody
-https://campus.thinkspace.ac.uk/... | Theme Writing with Bruce Broughton
-EOF
-
 wissen kurs --liste modul2.txt --praefix thinkspace_how-to-write-cinematic-music
 ```
+
+Die Liste ist eine Zeile pro Lektion, Titel nach dem `|` optional, `#` für
+Kommentare. Zusammensuchen muss man sie nicht – `wissen links` (unten) baut
+sie aus der Kursübersicht.
+
+**Schon erfasste URLs werden übergangen**, auch die bereits nach
+`verarbeitet/` verschobenen. Ein abgebrochener Durchlauf lässt sich dadurch
+wiederholen, und eingearbeitete Lektionen kehren nicht als Dubletten in den
+Eingang zurück. Ist nichts offen, öffnet sich kein Browser. `--neu-laden`
+holt trotzdem alles erneut.
 
 Transkript und Seitentext landen als getrennte Abschnitte in einer Datei –
 die automatische Seiten-Summary wird nicht angefasst, wie in `ANLEITUNG.md`
 gefordert.
+
+### Die URL-Liste eines Kurses sammeln
+
+```bash
+wissen links "https://campus.thinkspace.ac.uk/student/course/view/329"
+```
+
+Sammelt alle Links der Seite über alle Frames, gruppiert sie nach Pfadform
+(Zahlen werden zu `#`, aus `/student/course/view/329/item/43336/0/709` wird
+also `/student/course/view/#/item/#/#/#`) und legt die größte gleichartige
+Gruppe als fertige Liste ab. Die Lektionen eines Kurses teilen eine Form,
+Navigation und Fußzeile nicht – damit trennt sich das Gesuchte vom Rest, ohne
+dass die Plattform bekannt sein muss.
+
+Der Bericht daneben zeigt alle Gruppen, falls die größte nicht die richtige
+war.
 
 ### Wenn kein Transkript gefunden wird
 
@@ -266,7 +286,7 @@ Zeitpunkt.
 .venv/bin/python -m pytest
 ```
 
-199 Tests über die netzunabhängigen Teile: Untertitel-Verarbeitung samt
+215 Tests über die netzunabhängigen Teile: Untertitel-Verarbeitung samt
 Entdoppelung, Abdeckungsrechnung, Dateikopf und Dateinamen, Ablage und
 Verschieben, `quellen.md`-Entwurf, PDF-Einlesen, Konfiguration, Spur- und
 Formatwahl, Player-Erkennung, Frame-Auswahl beim Seitentext und die

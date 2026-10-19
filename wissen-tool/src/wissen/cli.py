@@ -123,16 +123,44 @@ def befehl_frames(args) -> int:
     return 0
 
 
+def befehl_links(args) -> int:
+    from . import pruefen
+
+    cfg = config.lade(args.config)
+    ausgabe = (
+        Path(args.ausgabe).expanduser() if args.ausgabe else Path.cwd() / "berichte"
+    ).resolve()
+    bericht, liste, gruppen = pruefen.sammle_links(
+        cfg, args.url, ausgabe, headless=args.headless
+    )
+    print(f"\nOrdner:  {ausgabe}")
+    print(f"Bericht: {bericht.name}")
+    if liste:
+        print(f"Liste:   {liste.name}  ({gruppen[0][1]} Zeilen, Form {gruppen[0][0]})")
+        print("\nListe durchsehen, dann:")
+        print(f"  wissen kurs --liste \"{liste}\" --praefix <kurs>")
+    else:
+        print("Keine Gruppe mit mehreren gleichartigen Links gefunden.")
+        print("Der Bericht zeigt, was auf der Seite verlinkt ist.")
+    return 0
+
+
 def befehl_kurs(args) -> int:
     from . import web
 
     cfg, ablage = _ablage(args)
     if args.liste:
-        ergebnisse = web.lade_liste(
+        ergebnisse, uebersprungen = web.lade_liste(
             cfg, ablage, Path(args.liste).expanduser(), praefix=args.praefix,
             kurs=args.kurs, screenshot=args.screenshot, headless=args.headless,
+            neu_laden=args.neu_laden,
         )
         print(f"\n{len(ergebnisse)} Seite(n) abgelegt.")
+        if uebersprungen:
+            print(
+                f"  {len(uebersprungen)} schon erfasst und übergangen "
+                "(--neu-laden erzwingt sie)."
+            )
         ohne = [f for _, f, _ in ergebnisse if "KEIN Transkript" in f.get("Abdeckung", "")]
         if ohne:
             print(f"  {len(ohne)} davon ohne Transkript -- 'wissen inspect' nutzen.")
@@ -141,6 +169,12 @@ def befehl_kurs(args) -> int:
     if not args.url:
         print("Entweder eine URL oder --liste angeben.", file=sys.stderr)
         return 2
+    if not args.neu_laden:
+        vorhanden = ablage.finde_nach_url(args.url)
+        if vorhanden is not None:
+            print(f"Schon erfasst: {ablage.rel(vorhanden)}")
+            print("Mit --neu-laden erneut holen.")
+            return 0
     pfad, felder, meldungen = web.lade_seite(
         cfg, ablage, args.url, praefix=args.praefix, kurs=args.kurs,
         modul=args.modul, lektion=args.lektion, titel=args.titel,
@@ -281,7 +315,15 @@ def baue_parser() -> argparse.ArgumentParser:
     s.add_argument("--screenshot", action="store_true", help="Seitenbild mitspeichern")
     s.add_argument("--headless", action="store_true",
                    help="ohne sichtbares Fenster (löst bei manchen Portalen Sperren aus)")
+    s.add_argument("--neu-laden", action="store_true",
+                   help="auch schon erfasste URLs erneut holen")
     s.set_defaults(func=befehl_kurs)
+
+    s = unter.add_parser("links", help="Lektions-URLs einer Kursseite sammeln")
+    s.add_argument("url", help="Kursübersicht, von der aus die Lektionen verlinkt sind")
+    s.add_argument("--ausgabe", help="Ordner für Bericht und Liste (Standard: ./berichte)")
+    s.add_argument("--headless", action="store_true")
+    s.set_defaults(func=befehl_links)
 
     s = unter.add_parser("pdf", help="PDF oder Ordner mit PDFs einlesen")
     s.add_argument("pfad")

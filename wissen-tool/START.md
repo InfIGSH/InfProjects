@@ -246,7 +246,31 @@ Den `.bericht.md` kannst du mir geben, dann trage ich den Selektor ein.
 
 ## 7. Ein ganzes Modul
 
-URL-Liste anlegen, eine Zeile pro Lektion, Titel nach dem `|` optional:
+Die URL-Liste musst du nicht von Hand zusammensuchen. Auf der Kursübersicht:
+
+```bash
+wissen links "https://campus.thinkspace.ac.uk/student/course/view/329"
+```
+
+Das sammelt alle Links der Seite, gruppiert sie nach Pfadform und legt die
+größte gleichartige Gruppe als fertige Liste ab — die Lektionen eines Kurses
+teilen in der Regel eine Form, Navigation und Fußzeile nicht. Liste
+durchsehen, Reihenfolge prüfen, nicht gewollte Zeilen mit `#` auskommentieren.
+
+Dann:
+
+```bash
+wissen kurs --liste "<die Datei>" --praefix thinkspace_how-to-write-cinematic-music
+```
+
+**Schon erfasste Lektionen werden übergangen** — auch die, die du bereits
+eingearbeitet und nach `verarbeitet/` verschoben hast. Ein abgebrochener
+Durchlauf lässt sich also einfach wiederholen, und eingearbeitete Lektionen
+kommen nicht als Dubletten zurück. Ist nichts offen, öffnet sich kein
+Browser. Mit `--neu-laden` holst du trotzdem alles erneut.
+
+Von Hand geht die Liste natürlich auch — eine Zeile pro Lektion, Titel nach
+dem `|` optional:
 
 ```
 https://campus.thinkspace.ac.uk/... | Introduction and Overview

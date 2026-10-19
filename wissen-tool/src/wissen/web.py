@@ -347,6 +347,7 @@ def lade_seite(
                 kontext=neuer_kontext,
             )
 
+
     regeln = cfg.host_regeln(url)
     seite = kontext.new_page()
     meldungen: list[str] = []
@@ -432,20 +433,10 @@ def _host(url: str) -> str:
     return (urlparse(url).hostname or "").replace("www.", "")
 
 
-def lade_liste(
-    cfg: Konfig,
-    ablage: Ablage,
-    datei: Path,
-    *,
-    praefix: str,
-    kurs: str | None = None,
-    screenshot: bool = False,
-    headless: bool = False,
-) -> list[tuple[Path, dict, list[str]]]:
-    """Liest eine Liste von URLs ab -- eine pro Zeile, optional `URL | Titel`.
+def lies_liste(datei: Path) -> list[tuple[str, str | None]]:
+    """Liest eine URL-Liste: eine pro Zeile, optional `URL | Titel`.
 
-    Leerzeilen und Zeilen mit `#` werden uebersprungen. Der Browser bleibt
-    fuer alle Seiten offen, die Anmeldung gilt also durchgehend.
+    Leerzeilen und Zeilen mit `#` werden uebersprungen.
     """
     eintraege: list[tuple[str, str | None]] = []
     for zeile in datei.read_text(encoding="utf-8").splitlines():
@@ -457,11 +448,49 @@ def lade_liste(
             eintraege.append((url.strip(), roh_titel.strip() or None))
         else:
             eintraege.append((zeile, None))
+    return eintraege
+
+
+def lade_liste(
+    cfg: Konfig,
+    ablage: Ablage,
+    datei: Path,
+    *,
+    praefix: str,
+    kurs: str | None = None,
+    screenshot: bool = False,
+    headless: bool = False,
+    neu_laden: bool = False,
+) -> tuple[list[tuple[Path, dict, list[str]]], list[str]]:
+    """Erfasst eine ganze URL-Liste. Rueckgabe: (Ergebnisse, Uebersprungene).
+
+    Der Browser bleibt fuer alle Seiten offen, die Anmeldung gilt also
+    durchgehend. Schon erfasste URLs werden uebergangen -- auch die bereits
+    nach `verarbeitet/` verschobenen, sonst kehren eingearbeitete Lektionen
+    als Dubletten in den Eingang zurueck.
+    """
+    eintraege = lies_liste(datei)
+    bekannt = {} if neu_laden else ablage.bekannte_urls()
+
+    # Erst aussortieren, dann den Browser oeffnen: ein zweiter Durchlauf
+    # ueber eine fertige Liste soll kein Fenster aufgehen lassen.
+    offen: list[tuple[str, str | None]] = []
+    uebersprungen: list[str] = []
+    for url, titel in eintraege:
+        vorhanden = bekannt.get(ablage.url_marke(url))
+        if vorhanden is not None:
+            print(f"schon erfasst: {ablage.rel(vorhanden)}")
+            uebersprungen.append(url)
+        else:
+            offen.append((url, titel))
 
     ergebnisse: list[tuple[Path, dict, list[str]]] = []
+    if not offen:
+        return ergebnisse, uebersprungen
+
     with browser(cfg, headless=headless) as kontext:
-        for nr, (url, titel) in enumerate(eintraege, start=1):
-            print(f"[{nr}/{len(eintraege)}] {url}")
+        for nr, (url, titel) in enumerate(offen, start=1):
+            print(f"[{nr}/{len(offen)}] {url}")
             try:
                 ergebnisse.append(
                     lade_seite(
@@ -471,5 +500,5 @@ def lade_liste(
                     )
                 )
             except Exception as exc:
-                print(f"    uebersprungen: {exc}")
-    return ergebnisse
+                print(f"    fehlgeschlagen: {exc}")
+    return ergebnisse, uebersprungen

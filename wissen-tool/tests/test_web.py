@@ -214,6 +214,94 @@ def test_hauptinhalt_ohne_text():
     assert web._hauptinhalt([_FakeFrame(url="https://kurs.de/l")], {}) == ""
 
 
+# -- URL-Listen ----------------------------------------------------------
+
+
+def test_lies_liste_trennt_url_und_titel(tmp_path):
+    datei = tmp_path / "modul2.txt"
+    datei.write_text(
+        "# Kommentarzeile wird übersprungen\n"
+        "\n"
+        "https://kurs.de/l1 | Introduction and Overview\n"
+        "https://kurs.de/l2|How to Write a Melody\n"
+        "https://kurs.de/l3\n"
+        "   \n",
+        encoding="utf-8",
+    )
+    assert web.lies_liste(datei) == [
+        ("https://kurs.de/l1", "Introduction and Overview"),
+        ("https://kurs.de/l2", "How to Write a Melody"),
+        ("https://kurs.de/l3", None),
+    ]
+
+
+def test_lies_liste_bei_leerem_titel_nach_strich(tmp_path):
+    datei = tmp_path / "l.txt"
+    datei.write_text("https://kurs.de/l1 |  \n", encoding="utf-8")
+    assert web.lies_liste(datei) == [("https://kurs.de/l1", None)]
+
+
+def _ablage_mit(tmp_path, urls):
+    from wissen.store import Ablage
+
+    root = tmp_path / "buch"
+    root.mkdir(parents=True)
+    (root / "ANLEITUNG.md").write_text("# A", encoding="utf-8")
+    ablage = Ablage(root)
+    ablage.init()
+    for nr, url in enumerate(urls):
+        ablage.schreibe(
+            {"Titel": f"L{nr}", "URL": url}, "x", ablage.eingang_pfad("kurs", str(nr))
+        )
+    return ablage
+
+
+def test_fertige_liste_oeffnet_keinen_browser(tmp_path, monkeypatch):
+    # Ein zweiter Durchlauf über eine fertige Liste soll nichts aufmachen.
+    def nicht_aufrufen(*a, **k):
+        raise AssertionError("Der Browser wurde geöffnet, obwohl nichts offen war.")
+
+    monkeypatch.setattr(web, "browser", nicht_aufrufen)
+    ablage = _ablage_mit(tmp_path, ["https://kurs.de/l1", "https://kurs.de/l2"])
+    datei = tmp_path / "liste.txt"
+    datei.write_text("https://kurs.de/l1\nhttps://kurs.de/l2/\n", encoding="utf-8")
+
+    ergebnisse, uebersprungen = web.lade_liste(
+        _cfg(tmp_path), ablage, datei, praefix="kurs"
+    )
+    assert ergebnisse == []
+    # Der Schlussstrich in Zeile 2 darf den Abgleich nicht aushebeln.
+    assert len(uebersprungen) == 2
+
+
+def test_neu_laden_uebergeht_den_dublettenschutz(tmp_path, monkeypatch):
+    geoeffnet = []
+
+    class _Kontext:
+        def __enter__(self):
+            geoeffnet.append(True)
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(web, "browser", lambda *a, **k: _Kontext())
+    monkeypatch.setattr(
+        web, "lade_seite",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("Abruf hier nicht nötig")),
+    )
+    ablage = _ablage_mit(tmp_path, ["https://kurs.de/l1"])
+    datei = tmp_path / "liste.txt"
+    datei.write_text("https://kurs.de/l1\n", encoding="utf-8")
+
+    ergebnisse, uebersprungen = web.lade_liste(
+        _cfg(tmp_path), ablage, datei, praefix="kurs", neu_laden=True
+    )
+    assert uebersprungen == []
+    assert geoeffnet == [True]
+    assert ergebnisse == []  # lade_seite scheitert absichtlich, wird gefangen
+
+
 # -- Transkript aus dem eingebetteten Player -----------------------------
 
 VIDEO = ("https://player.vimeo.com/video/957204710?h=4f2cb2a359", "Vimeo")

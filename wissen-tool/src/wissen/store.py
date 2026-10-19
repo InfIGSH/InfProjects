@@ -115,11 +115,25 @@ class Ablage:
                 felder = schema.kopf_lesen(pfad.read_text(encoding="utf-8"))
                 yield pfad, felder
 
+    @staticmethod
+    def url_marke(url: str) -> str:
+        return (url or "").strip().rstrip("/")
+
     def finde_nach_url(self, url: str) -> Path | None:
+        return self.bekannte_urls().get(self.url_marke(url))
+
+    def bekannte_urls(self) -> dict[str, Path]:
+        """Alle schon erfassten URLs -- auch die bereits eingearbeiteten.
+
+        Einmal gebaut statt pro Lektion neu: bei einem Modul mit 60 Zeilen
+        waere ein Durchsuchen je Zeile sonst ein Vielfaches an Dateizugriffen.
+        """
+        bekannt: dict[str, Path] = {}
         for pfad, felder in self.dokumente(auch_verarbeitet=True):
-            if (felder.get("URL") or "").strip().rstrip("/") == url.strip().rstrip("/"):
-                return pfad
-        return None
+            marke = self.url_marke(felder.get("URL") or "")
+            if marke:
+                bekannt.setdefault(marke, pfad)
+        return bekannt
 
     def verschiebe_verarbeitet(self, pfad: Path) -> Path:
         """Ablauf C Schritt 6: Eingangsdatei nach `eingang/verarbeitet/`."""

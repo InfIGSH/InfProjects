@@ -82,6 +82,32 @@ def test_finde_nach_url_ignoriert_schlussstrich(ablage):
     assert ablage.finde_nach_url("https://kurs.de/lektion-1/") == pfad
 
 
+def test_bekannte_urls_umfasst_auch_eingearbeitete(ablage):
+    # Entscheidend gegen Dubletten: eine Lektion, die schon eingearbeitet und
+    # nach verarbeitet/ verschoben wurde, darf nicht erneut erfasst werden.
+    offen = ablage.schreibe(
+        {"Titel": "offen", "URL": "https://kurs.de/l1"},
+        "x", ablage.eingang_pfad("kurs", "l1"),
+    )
+    fertig = ablage.schreibe(
+        {"Titel": "fertig", "URL": "https://kurs.de/l2"},
+        "x", ablage.verarbeitet / "kurs_l2.md",
+    )
+    bekannt = ablage.bekannte_urls()
+    assert bekannt["https://kurs.de/l1"] == offen
+    assert bekannt["https://kurs.de/l2"] == fertig
+    assert ablage.finde_nach_url("https://kurs.de/l2") == fertig
+
+
+def test_bekannte_urls_ohne_url_feld(ablage):
+    ablage.schreibe({"Titel": "PDF ohne URL"}, "x", ablage.eingang_pfad("kurs", "p"))
+    assert ablage.bekannte_urls() == {}
+
+
+def test_bekannte_urls_bei_leerem_eingang(ablage):
+    assert ablage.bekannte_urls() == {}
+
+
 def test_dokumente_zeigt_nur_den_offenen_rueckstand(ablage):
     offen = ablage.schreibe({"Titel": "offen"}, "x", ablage.eingang_pfad("a", "1"))
     fertig = ablage.schreibe({"Titel": "fertig"}, "x", ablage.verarbeitet / "b_2.md")

@@ -20,6 +20,105 @@ from . import erkennung, schema, web
 from .config import Konfig
 
 
+LINK_JS = """
+() => [...document.querySelectorAll('a[href]')].map(a => ({
+  href: a.href,
+  text: (a.innerText || a.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 120),
+}))
+"""
+
+
+def _muster(url: str) -> str:
+    """Pfadform einer URL, Zahlen durch '#' ersetzt.
+
+    So fallen alle Lektionslinks eines Kurses zu einem Muster zusammen und
+    heben sich von Navigation und Fusszeile ab.
+    """
+    from urllib.parse import urlparse
+
+    pfad = urlparse(url).path or "/"
+    teile = ["#" if t.isdigit() else t for t in pfad.split("/")]
+    return "/".join(teile)
+
+
+def sammle_links(
+    cfg: Konfig, url: str, ausgabe: Path, *, headless: bool = False
+) -> tuple[Path, Path | None, list[tuple[str, int]]]:
+    """Sammelt alle Links einer Seite und gruppiert sie nach Pfadform.
+
+    Gedacht zum Aufbauen der URL-Liste fuer `wissen kurs --liste`: die
+    Lektionen eines Kurses teilen eine Pfadform, und die groesste Gruppe mit
+    gleicher Form ist fast immer die Lektionsliste.
+    """
+    from collections import OrderedDict
+
+    ausgabe = Path(ausgabe).expanduser()
+    ausgabe.mkdir(parents=True, exist_ok=True)
+    eigener_host = web._host(url)
+
+    gefunden: "OrderedDict[str, list[tuple[str, str]]]" = OrderedDict()
+    with web.browser(cfg, headless=headless) as kontext:
+        seite = kontext.new_page()
+        try:
+            seite.goto(url, wait_until="domcontentloaded", timeout=120_000)
+            with contextlib.suppress(Exception):
+                seite.wait_for_load_state("networkidle", timeout=15_000)
+            seite.wait_for_timeout(cfg.warte_ms)
+
+            gesehen: set[str] = set()
+            for frame in web.rahmen_von(seite):
+                with contextlib.suppress(Exception):
+                    for eintrag in frame.evaluate(LINK_JS) or []:
+                        href = (eintrag.get("href") or "").split("#")[0]
+                        if not href.startswith("http") or href in gesehen:
+                            continue
+                        if web._host(href) != eigener_host:
+                            continue
+                        gesehen.add(href)
+                        gefunden.setdefault(_muster(href), []).append(
+                            (href, eintrag.get("text") or "")
+                        )
+        finally:
+            seite.close()
+
+    gruppen = sorted(gefunden.items(), key=lambda p: -len(p[1]))
+    marke = schema.dateiname_fuer_url(url)
+
+    zeilen = [
+        f"# Linkbericht: {url}", "",
+        f"- Erfassungsdatum: {schema.heute()}",
+        f"- {sum(len(v) for v in gefunden.values())} Links auf {eigener_host}",
+        "", "Nach Pfadform gruppiert, groesste Gruppe zuerst. Die Lektionen eines",
+        "Kurses teilen in der Regel eine Form.", "",
+    ]
+    for form, eintraege in gruppen[:12]:
+        zeilen += [f"## `{form}` — {len(eintraege)} Links", ""]
+        for href, text in eintraege[:40]:
+            zeilen.append(f"- {href} | {text}" if text else f"- {href}")
+        if len(eintraege) > 40:
+            zeilen.append(f"- … und {len(eintraege) - 40} weitere")
+        zeilen.append("")
+
+    bericht = ausgabe / f"{marke}.links.md"
+    bericht.write_text("\n".join(zeilen).rstrip() + "\n", encoding="utf-8")
+
+    # Die groesste Gruppe gleich als fertige Liste ablegen.
+    liste = None
+    if gruppen and len(gruppen[0][1]) > 1:
+        liste = ausgabe / f"{marke}.liste.txt"
+        inhalt = [
+            f"# Aus {url} gesammelt, Pfadform {gruppen[0][0]}",
+            "# Zeilen pruefen und sortieren, dann:",
+            "#   wissen kurs --liste <diese Datei> --praefix <kurs>",
+            "",
+        ]
+        for href, text in gruppen[0][1]:
+            inhalt.append(f"{href} | {text}" if text else href)
+        liste.write_text("\n".join(inhalt) + "\n", encoding="utf-8")
+
+    return bericht, liste, [(form, len(e)) for form, e in gruppen]
+
+
 def _frame_name(frame, nr: int) -> str:
     url = frame.url or ""
     kurz = url if len(url) < 90 else url[:87] + "..."
