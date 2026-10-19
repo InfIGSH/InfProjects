@@ -65,6 +65,12 @@ Das ist nicht nur robuster, es ist auch besser: echte Zeitstempel aus der
 VTT-Datei statt abgeschriebener Oberfläche, und dieselbe Entdoppelung,
 Zeitmarken-Aufteilung und Abdeckungsprüfung wie bei YouTube.
 
+Bei mehreren eingebetteten Videos werden alle erkannten Player nacheinander
+abgerufen. Jedes Video bekommt einen eigenen Transkriptabschnitt mit Quelle
+und Abdeckung; fehlende Untertitel werden pro Video ausgewiesen und stoppen
+die weiteren Abrufe nicht. `wissen inspect` prüft ebenfalls jeden Player.
+Bereits erfasste Lektionen mit `--neu-laden` erneut einlesen.
+
 Erkannt werden Vimeo, YouTube und Wistia. Findet das Werkzeug weder Panel
 noch Player, sagt `wissen inspect`, was auf der Seite steht.
 

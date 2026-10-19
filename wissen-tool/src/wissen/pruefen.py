@@ -394,76 +394,78 @@ def pruefe(
 
             zeilen += ["## Eingebetteter Player", ""]
             spur_vorhanden = False
-            video = web.finde_video(rahmen)
-            if video is None:
+            videos = web.finde_videos(rahmen)
+            if not videos:
                 zeilen.append("- keiner gefunden")
             else:
-                video_url, anbieter = video
-                zeilen += [f"- {anbieter}: `{video_url}`", ""]
-                try:
-                    from . import youtube
+                for video_nr, video in enumerate(videos, 1):
+                    zeilen += [f"### Video {video_nr}", ""]
+                    video_url, anbieter = video
+                    zeilen += [f"- {anbieter}: `{video_url}`", ""]
+                    try:
+                        from . import youtube
 
-                    info, proben = youtube.spur_probe(
-                        video_url, cfg.sprachen, url, ausgabe,
-                        schema.dateiname_fuer_url(url),
-                    )
-                    zeilen += [
-                        f"- Titel: {(info.get('title') or '?')!r}",
-                        f"- Dauer: {info.get('duration')} s",
-                        "",
-                    ]
-                    if not proben:
-                        vorhanden = sorted(
-                            set(info.get("subtitles") or {})
-                            | set(info.get("automatic_captions") or {})
+                        info, proben = youtube.spur_probe(
+                            video_url, cfg.sprachen, url, ausgabe,
+                            schema.dateiname_fuer_url(url) + f".video{video_nr}",
                         )
                         zeilen += [
-                            "Keine Spur passt zu den Sprachen "
-                            f"{', '.join(cfg.sprachen)}.",
-                            f"Vorhanden: {', '.join(vorhanden) or 'keine'}.",
-                            "In wissen.toml unter [youtube] sprachen anpassen.",
+                            f"- Titel: {(info.get('title') or '?')!r}",
+                            f"- Dauer: {info.get('duration')} s",
+                            "",
                         ]
-                    else:
-                        zeilen.append(
-                            "Spuren, jeweils wirklich abgerufen "
-                            "(Referer = diese Kursseite):"
-                        )
-                        zeilen.append("")
-                        for probe in proben:
-                            art = "automatisch" if probe["automatisch"] else "vom Anbieter"
-                            zeilen += [
-                                f"- **{probe['sprache']}** ({probe['format']}, {art})",
-                                f"  - Antwort: {probe['diagnose']}",
-                                f"  - daraus gelesene Segmente: {probe['kacheln']}",
-                            ]
-                            if probe["datei"]:
-                                zeilen.append(f"  - Rohdatei: `{probe['datei']}`")
-                        zeilen.append("")
-                        brauchbar = [p for p in proben if p["kacheln"]]
-                        spur_vorhanden = bool(brauchbar)
-                        if brauchbar:
-                            zeilen.append(
-                                "→ **`wissen kurs` kann das Transkript hier holen** "
-                                f"(aus `{brauchbar[0]['sprache']}`, "
-                                f"{brauchbar[0]['kacheln']} Segmente)."
+                        if not proben:
+                            vorhanden = sorted(
+                                set(info.get("subtitles") or {})
+                                | set(info.get("automatic_captions") or {})
                             )
-                        else:
                             zeilen += [
-                                "→ **Spur gefunden, aber ohne lesbaren Inhalt.**",
-                                "",
-                                "Die Rohdatei oben zeigt, was zurueckkam. Haeufige",
-                                "Faelle: eine leere Antwort (0 Bytes), eine",
-                                "HTML-Fehlerseite statt der Untertitel, oder ein",
-                                "Format, das der Parser nicht kennt.",
+                                "Keine Spur passt zu den Sprachen "
+                                f"{', '.join(cfg.sprachen)}.",
+                                f"Vorhanden: {', '.join(vorhanden) or 'keine'}.",
+                                "In wissen.toml unter [youtube] sprachen anpassen.",
                             ]
-                except Exception as exc:
-                    zeilen += [
-                        f"- **Abruf fehlgeschlagen:** {type(exc).__name__}: {exc}",
-                        "",
-                        "Moegliche Gruende: das Video ist auf die Kursdomain"
-                        " beschraenkt und braucht eine Anmeldung, die yt-dlp"
-                        " nicht hat, oder der Anbieter wird nicht unterstuetzt.",
-                    ]
+                        else:
+                            zeilen.append(
+                                "Spuren, jeweils wirklich abgerufen "
+                                "(Referer = diese Kursseite):"
+                            )
+                            zeilen.append("")
+                            for probe in proben:
+                                art = "automatisch" if probe["automatisch"] else "vom Anbieter"
+                                zeilen += [
+                                    f"- **{probe['sprache']}** ({probe['format']}, {art})",
+                                    f"  - Antwort: {probe['diagnose']}",
+                                    f"  - daraus gelesene Segmente: {probe['kacheln']}",
+                                ]
+                                if probe["datei"]:
+                                    zeilen.append(f"  - Rohdatei: `{probe['datei']}`")
+                            zeilen.append("")
+                            brauchbar = [p for p in proben if p["kacheln"]]
+                            spur_vorhanden = spur_vorhanden or bool(brauchbar)
+                            if brauchbar:
+                                zeilen.append(
+                                    "→ **`wissen kurs` kann das Transkript hier holen** "
+                                    f"(aus `{brauchbar[0]['sprache']}`, "
+                                    f"{brauchbar[0]['kacheln']} Segmente)."
+                                )
+                            else:
+                                zeilen += [
+                                    "→ **Spur gefunden, aber ohne lesbaren Inhalt.**",
+                                    "",
+                                    "Die Rohdatei oben zeigt, was zurueckkam. Haeufige",
+                                    "Faelle: eine leere Antwort (0 Bytes), eine",
+                                    "HTML-Fehlerseite statt der Untertitel, oder ein",
+                                    "Format, das der Parser nicht kennt.",
+                                ]
+                    except Exception as exc:
+                        zeilen += [
+                            f"- **Abruf fehlgeschlagen:** {type(exc).__name__}: {exc}",
+                            "",
+                            "Moegliche Gruende: das Video ist auf die Kursdomain"
+                            " beschraenkt und braucht eine Anmeldung, die yt-dlp"
+                            " nicht hat, oder der Anbieter wird nicht unterstuetzt.",
+                        ]
             zeilen.append("")
 
             zeilen += ["## Transkript-Kandidaten", ""]

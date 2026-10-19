@@ -382,3 +382,47 @@ def test_player_transkript_bei_nicht_abrufbarer_spur(tmp_path, monkeypatch):
     # sonst ist später nicht nachvollziehbar, woran es lag.
     assert felder["Video"] == f"Vimeo: {VIDEO[0]}"
     assert "verweigert die Auskunft" in nachricht
+
+
+def test_finde_videos_sammelt_alle_und_entfernt_dublette_mit_zeitanker():
+    urls = [f'https://player.vimeo.com/video/{nr}?h=abc' for nr in (1, 2, 3)]
+    rahmen = [_FakeFrame(url=u) for u in urls + [urls[0] + '#t=10s']]
+    assert web.finde_videos(rahmen) == [(u, 'Vimeo') for u in urls]
+
+
+def test_lade_seite_erfasst_drei_videos_trotz_dom_transkript(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    urls = [f'https://player.vimeo.com/video/{nr}' for nr in (1, 2, 3)]
+    rahmen = [_FakeFrame(url=u) for u in urls]
+    seite = SimpleNamespace(
+        goto=lambda *a, **k: None, wait_for_load_state=lambda *a, **k: None,
+        wait_for_timeout=lambda *a: None, title=lambda: 'Drei Videos',
+        query_selector=lambda *a: None, frames=rahmen, close=lambda: None,
+    )
+    monkeypatch.setattr(web, '_transkript_aus_dom', lambda *a: ('Panel nur von Video 1', 'DOM'))
+    monkeypatch.setattr(web, '_hauptinhalt', lambda *a: 'Seitentext')
+    abgerufen = []
+
+    def spur(url, *a, **k):
+        abgerufen.append(url)
+        if url == urls[1]:
+            raise RuntimeError('Keine Untertitel fuer Video 2')
+        return _spur(500, 509)
+
+    from wissen import youtube
+    monkeypatch.setattr(youtube, 'spur_laden', spur)
+    ablage = _ablage_mit(tmp_path, [])
+    pfad, felder, meldungen = web.lade_seite(
+        _cfg(tmp_path), ablage, SEITE, praefix='kurs',
+        kontext=SimpleNamespace(new_page=lambda: seite),
+    )
+    assert abgerufen == urls
+    inhalt = pfad.read_text(encoding='utf-8')
+    for nr, url in enumerate(urls, 1):
+        assert f'### Video {nr}' in inhalt
+        assert url in felder['Video']
+    assert 'Video 2: KEIN Transkript' in felder['Abdeckung']
+    assert 'Video 3: Transkript 0:00' in felder['Abdeckung']
+    assert 'Panel nur von Video 1' not in inhalt
+    assert len(meldungen) == 3

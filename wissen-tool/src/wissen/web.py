@@ -157,16 +157,24 @@ def rahmen_von(seite) -> list:
     return list(seite.frames)
 
 
-def finde_video(rahmen: list) -> tuple[str, str] | None:
-    """Sucht einen eingebetteten Player. Rueckgabe: (URL, Anbietername)."""
+def finde_videos(rahmen: list) -> list[tuple[str, str]]:
+    """Alle eindeutigen Player in Frame-Reihenfolge, ohne Zeitanker."""
+    ergebnis = []
+    gesehen = set()
     for frame in rahmen:
-        url = frame.url or ""
+        url = (frame.url or "").split("#")[0]
         for muster, anbieter in VIDEO_MUSTER:
             if muster.search(url):
-                # Der Zeitanker (#t=00h07m05s) ist nur die Abspielposition
-                # und verwirrt manche Extraktoren.
-                return url.split("#")[0], anbieter
-    return None
+                if url not in gesehen:
+                    gesehen.add(url)
+                    ergebnis.append((url, anbieter))
+                break
+    return ergebnis
+
+
+def finde_video(rahmen: list) -> tuple[str, str] | None:
+    """Kompatibilitaet fuer Aufrufer, die nur den ersten Player brauchen."""
+    return next(iter(finde_videos(rahmen)), None)
 
 
 def _text_aus_selektor(frame, selektor: str) -> str:
@@ -321,6 +329,24 @@ def _transkript_vom_player(
     return text, felder, nachricht
 
 
+def _transkripte_von_playern(cfg, videos, seiten_url, felder):
+    """Jedes Video getrennt abrufen; Fehler duerfen weitere nicht verhindern."""
+    teile, abdeckungen, quellen, meldungen = [], [], [], []
+    for nr, video in enumerate(videos, 1):
+        text, video_felder, nachricht = _transkript_vom_player(
+            cfg, video, seiten_url, {}
+        )
+        quellen.append(video_felder["Video"])
+        abdeckung = video_felder["Abdeckung"]
+        abdeckungen.append(f"Video {nr}: {abdeckung}")
+        meldungen.append(f"Video {nr}/{len(videos)}: {nachricht}")
+        teile += [f"### Video {nr}", "", f"- Video: {video_felder['Video']}",
+                  f"- Abdeckung: {abdeckung}", "", text or "_(kein Transkript abrufbar)_", ""]
+    felder["Video"] = "; ".join(quellen)
+    felder["Abdeckung"] = "; ".join(abdeckungen)
+    return "\n".join(teile).strip(), felder, meldungen
+
+
 # -- Hauptfunktion -------------------------------------------------------
 
 
@@ -382,7 +408,13 @@ def lade_seite(
             "Erfassungsdatum": schema.heute(),
         }
 
-        if transkript:
+        videos = finde_videos(rahmen)
+        if len(videos) > 1:
+            transkript, felder, nachrichten = _transkripte_von_playern(
+                cfg, videos, url, felder
+            )
+            meldungen.extend(nachrichten)
+        elif transkript:
             letzte = _letzte_zeitmarke(transkript)
             felder["Abdeckung"] = (
                 f"Transkript bis {schema.zeit_kurz(letzte)} ({wie})"
